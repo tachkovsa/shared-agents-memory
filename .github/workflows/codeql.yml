@@ -37,16 +37,41 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Detect CodeQL default setup
+        id: default_setup
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              const response = await github.request("GET /repos/{owner}/{repo}/code-scanning/default-setup", {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              const state = response?.data?.state || "not-configured";
+              core.setOutput("state", state);
+            } catch (error) {
+              core.setOutput("state", "configured");
+              core.info(`Default setup lookup failed, assuming default setup is enabled and skipping advanced CodeQL: ${error.message}`);
+            }
+
+      - name: Skip advanced CodeQL because default setup is enabled
+        if: steps.default_setup.outputs.state == 'configured'
+        run: |
+          echo "GitHub CodeQL default setup is enabled for this repository."
+          echo "Skipping advanced CodeQL workflow to avoid SARIF processing conflicts."
 
       - name: Initialize CodeQL
+        if: steps.default_setup.outputs.state != 'configured'
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
 
       - name: Autobuild
+        if: steps.default_setup.outputs.state != 'configured'
         uses: github/codeql-action/autobuild@v3
 
       - name: Perform CodeQL Analysis
+        if: steps.default_setup.outputs.state != 'configured'
         uses: github/codeql-action/analyze@v3
         with:
           category: '/language:${{ matrix.language }}'
