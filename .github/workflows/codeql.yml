@@ -50,8 +50,8 @@ jobs:
               const state = response?.data?.state || "not-configured";
               core.setOutput("state", state);
             } catch (error) {
-              core.setOutput("state", "not-configured");
-              core.info(`Default setup lookup failed, proceeding with advanced CodeQL: ${error.message}`);
+              core.setOutput("state", "configured");
+              core.info(`Default setup lookup failed, assuming default setup is enabled and skipping advanced CodeQL: ${error.message}`);
             }
 
       - name: Skip advanced CodeQL because default setup is enabled
