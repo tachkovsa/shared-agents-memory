@@ -3,8 +3,18 @@ name: Semgrep
 on:
   push:
     branches: [main]
+    paths:
+      - '**/*.ts'
+      - '**/*.js'
+      - '**/*.mjs'
+      - 'package.json'
   pull_request:
     branches: [main]
+    paths:
+      - '**/*.ts'
+      - '**/*.js'
+      - '**/*.mjs'
+      - 'package.json'
   schedule:
     - cron: '0 6 * * 1' # Weekly Monday 06:00 UTC
 
