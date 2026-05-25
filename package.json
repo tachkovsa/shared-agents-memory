@@ -1,0 +1,37 @@
+{
+  "name": "shared-agents-memory",
+  "version": "0.1.0",
+  "description": "Shared agent memory MCP service backed by Qdrant and OpenRouter embeddings",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "dev:inspect": "tsx --inspect src/index.ts",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@qdrant/js-client-rest": "^1.13.0",
+    "zod": "^3.25.0",
+    "dotenv": "^16.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "eslint": "^9.0.0",
+    "@eslint/js": "^9.0.0",
+    "typescript-eslint": "^8.0.0",
+    "typescript": "^5.8.0",
+    "tsx": "^4.19.0",
+    "vitest": "^3.2.0"
+  }
+}
