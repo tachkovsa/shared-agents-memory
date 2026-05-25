@@ -1,0 +1,47 @@
+name: Semgrep
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.ts'
+      - '**/*.js'
+      - '**/*.mjs'
+      - 'package.json'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.ts'
+      - '**/*.js'
+      - '**/*.mjs'
+      - 'package.json'
+  schedule:
+    - cron: '0 6 * * 1' # Weekly Monday 06:00 UTC
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    name: SAST Scan
+    runs-on: ubuntu-latest
+
+    container:
+      image: semgrep/semgrep
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: semgrep scan --config auto --sarif --output semgrep-results.sarif
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep-results.sarif
+          category: semgrep
