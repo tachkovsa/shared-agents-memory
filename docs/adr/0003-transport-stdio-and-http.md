@@ -204,8 +204,8 @@ A degraded version of this — "stdio per laptop, but all of them point at the s
 
 ### 6.1 New issues to file
 
-- **#19 Streamable HTTP transport wiring.** Replace/augment `StdioServerTransport` in `src/index.ts` with a transport selector based on `TRANSPORT`. Implement the HTTP server (Node's built-in `http.createServer` or a thin Express wrapper — caller's choice).
-- **#20 Origin + binding validation.** Implement the `Origin` check, the loopback-bind default, and the "binding to 0.0.0.0 without explicit consent" startup warning.
+- **#22 Streamable HTTP transport wiring.** Replace/augment `StdioServerTransport` in `src/index.ts` with a transport selector based on `TRANSPORT`. Implement the HTTP server (Node's built-in `http.createServer` or a thin Express wrapper — caller's choice).
+- **#23 Origin + binding validation.** Implement the `Origin` check, the loopback-bind default, and the "binding to 0.0.0.0 without explicit consent" startup warning.
 
 ### 6.2 Existing issues to amend
 

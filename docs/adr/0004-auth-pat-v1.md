@@ -253,9 +253,9 @@ Every auth boundary outcome emits an append-only line to `data/_auth/audit.jsonl
 
 ### 6.1 New issues to file
 
-- **#21 PAT minting + storage layer.** `data/_auth/pats.jsonl`, append-only writer, in-memory index, HMAC+pepper hashing, pepper file + env sync at boot.
-- **#22 PAT lifecycle MCP tools.** `pat.create`, `pat.list`, `pat.revoke`, `pat.rotate` with the confirmation-token ceremony.
-- **#23 Bootstrap flow.** First-boot banner, `.bootstrap_done` marker, refusal to print on subsequent boots.
+- **#24 PAT minting + storage layer.** `data/_auth/pats.jsonl`, append-only writer, in-memory index, HMAC+pepper hashing, pepper file + env sync at boot.
+- **#25 PAT lifecycle MCP tools.** `pat.create`, `pat.list`, `pat.revoke`, `pat.rotate` with the confirmation-token ceremony.
+- **#21 Bootstrap flow.** First-boot banner, `.bootstrap_done` marker, refusal to print on subsequent boots. (Same issue as ADR-0002 namespace bootstrap — consolidated.)
 
 ### 6.2 Existing issues to amend
 

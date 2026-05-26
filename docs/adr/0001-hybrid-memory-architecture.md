@@ -237,14 +237,14 @@ Owner signs off by replying inline with the chosen option for each Q. Once all f
 
 ### 6.1 New issues to file
 
-- **#14 Rule-file storage layer.** Implement `data/namespaces/<ns>/rules/` filesystem layout, atomic upsert/delete, INDEX.md regeneration, per-namespace write lock.
-- **#15 MCP Resources surface for rules.** Register `mem://<namespace>/rules/...` URI handler in the MCP server (`resources/list`, `resources/read`, `resources/subscribe`).
-- **#16 Migration from existing Claude Code memory.** One-shot script that reads `~/.claude/projects/<project>/memory/*.md` and seeds them as rules into a chosen namespace (default `personal`). Idempotent; safe to re-run.
+- **#17 Rule-file storage layer.** Implement `data/namespaces/<ns>/rules/` filesystem layout, atomic upsert/delete, INDEX.md regeneration, per-namespace write lock.
+- **#18 MCP Resources surface for rules.** Register `mem://<namespace>/rules/...` URI handler in the MCP server (`resources/list`, `resources/read`, `resources/subscribe`).
+- **#19 Migration from existing Claude Code memory.** One-shot script that reads `~/.claude/projects/<project>/memory/*.md` and seeds them as rules into a chosen namespace (default `personal`). Idempotent; safe to re-run.
 
 ### 6.2 Existing issues to amend
 
-- **#5 Memory domain service.** Scope clarification: this issue covers episodic memory only (Qdrant points). Rules are issue #14. Add `memory.update_metadata` to the tool set. Add `kind` discriminator field to payload reserved for future use but locked to `"episodic"` in v1.
-- **#6 MCP tool surface.** Replace verb_noun tool names with `<noun>.<verb>` (`memory.store` etc.). Note that rules are exposed as Resources (#15), not Tools, with a compatibility shim (`rules.list`, `rules.read`).
+- **#5 Memory domain service.** Scope clarification: this issue covers episodic memory only (Qdrant points). Rules are issue #17. Add `memory.update_metadata` to the tool set. Add `kind` discriminator field to payload reserved for future use but locked to `"episodic"` in v1.
+- **#6 MCP tool surface.** Replace verb_noun tool names with `<noun>.<verb>` (`memory.store` etc.). Note that rules are exposed as Resources (#18), not Tools, with a compatibility shim (`rules.list`, `rules.read`).
 
 ### 6.3 Code impact (scaffold)
 

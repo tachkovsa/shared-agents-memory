@@ -216,8 +216,8 @@ Codex's review explicitly flagged "Qdrant collections have fixed vector config a
 
 ### 6.1 New issues to file
 
-- **#17 Namespace lifecycle tools.** `namespace.create`, `namespace.list` (only namespaces the caller is a member of), `namespace.update` (display_name, quota, retention), `namespace.add_member`, `namespace.remove_member`, `namespace.delete` (with confirmation envelope).
-- **#18 Bootstrap flow.** On first boot, create `personal` namespace + emit one-shot bootstrap PAT to operator console.
+- **#20 Namespace lifecycle tools.** `namespace.create`, `namespace.list` (only namespaces the caller is a member of), `namespace.update` (display_name, quota, retention), `namespace.add_member`, `namespace.remove_member`, `namespace.delete` (with confirmation envelope).
+- **#21 Bootstrap flow.** On first boot, create `personal` namespace + emit one-shot bootstrap PAT to operator console. (Combined with the ADR-0004 PAT bootstrap into one issue.)
 
 ### 6.2 Existing issues to amend
 

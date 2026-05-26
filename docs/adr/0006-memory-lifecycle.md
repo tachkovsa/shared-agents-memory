@@ -263,10 +263,8 @@ Tuned via `namespace.update` (requires `namespace:admin`). All values have safe 
 
 ### 6.1 New issues to file
 
-- **#24 Semantic dedup on write.** Implement §3.2 in `memory.store`. Return `outcome` discriminator. Per-namespace threshold.
-- **#25 Reinforcement counter + retrieval timestamp.** Batched-flush updater. Index `last_retrieved_at`.
-- **#26 Per-namespace decay sweep.** Nightly cron; `decay_score` payload field; search-time re-rank multiplier.
-- **#27 Supersession.** `supersedes[]` arg on `memory.store`; default filter `superseded_by IS NULL`; `include_superseded` toggle.
+- **#26 Semantic dedup on write + reinforcement counter.** Combines: dedup branch in `memory.store` with `outcome` discriminator + per-namespace threshold + batched-flush reinforcement updater on `memory.get`/`memory.search` + `last_retrieved_at` index.
+- **#27 Per-namespace decay sweep + supersession.** Combines: nightly decay cron with `decay_score` payload field, search-time re-rank multiplier + `supersedes[]` arg on `memory.store` with default-exclude filter + `memory.restore` undelete within grace.
 - **#28 Staleness audit (file/url/git_commit).** Opt-in per namespace; opt-in per memory via `verifies_against`. File-kind requires mounted read-only volume.
 
 ### 6.2 Existing issues to amend
