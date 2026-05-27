@@ -285,6 +285,14 @@ export class EmbeddingClient {
   }
 
   /**
+   * Returns the current circuit breaker state.
+   * Used by the /healthz endpoint to check if the embedding service is degraded.
+   */
+  getBreakerState(): 'closed' | 'open' | 'half-open' {
+    return this.breaker.getState();
+  }
+
+  /**
    * Generate an embedding vector for the given text.
    */
   async embed(input: string): Promise<number[]> {

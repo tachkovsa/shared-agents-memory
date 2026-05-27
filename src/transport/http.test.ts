@@ -20,21 +20,25 @@ import { runHttpTransport } from './http.js';
 
 // ── Minimal mocks ─────────────────────────────────────────────────────────────
 
-function makeQdrantMock() {
+function makeQdrantMock(overrides: Record<string, unknown> = {}) {
   return {
     getCollections: vi.fn().mockResolvedValue({ collections: [] }),
+    getCollection: vi.fn().mockResolvedValue({ config: { params: { vectors: { size: 4096, distance: 'Cosine' } } } }),
     createCollection: vi.fn().mockResolvedValue({}),
     createPayloadIndex: vi.fn().mockResolvedValue({}),
     upsert: vi.fn().mockResolvedValue({}),
     search: vi.fn().mockResolvedValue([]),
     retrieve: vi.fn().mockResolvedValue([]),
+    count: vi.fn().mockResolvedValue({ count: 0 }),
     delete: vi.fn().mockResolvedValue({}),
+    ...overrides,
   };
 }
 
-function makeEmbeddingsMock() {
+function makeEmbeddingsMock(breakerState: 'closed' | 'open' | 'half-open' = 'closed') {
   return {
     embed: vi.fn().mockResolvedValue(new Array(4096).fill(0)),
+    getBreakerState: vi.fn().mockReturnValue(breakerState),
   };
 }
 
@@ -162,7 +166,13 @@ interface TestServer {
  * Starts the HTTP transport bound to a random port and returns helpers.
  * Uses a real PatStore (file-backed) with a single minted PAT.
  */
-async function startTestServer(configOverrides: Partial<Config['http']> = {}): Promise<TestServer> {
+async function startTestServer(
+  configOverrides: Partial<Config['http']> = {},
+  deps: {
+    qdrant?: ReturnType<typeof makeQdrantMock>;
+    embeddings?: ReturnType<typeof makeEmbeddingsMock>;
+  } = {},
+): Promise<TestServer> {
   const dataDir = await mkdtemp(join(tmpdir(), 'sam-http-test-'));
   const PEPPER = Buffer.alloc(32, 0xab);
 
@@ -189,8 +199,8 @@ async function startTestServer(configOverrides: Partial<Config['http']> = {}): P
     dataDir,
   );
 
-  const qdrant = makeQdrantMock();
-  const embeddings = makeEmbeddingsMock();
+  const qdrant = deps.qdrant ?? makeQdrantMock();
+  const embeddings = deps.embeddings ?? makeEmbeddingsMock();
 
   // We don't await the whole runHttpTransport (it resolves when the server
   // starts listening, then keeps running). We wrap it so we can track the
@@ -608,5 +618,114 @@ describe('0.0.0.0 + missing HTTP_PUBLIC_ORIGIN warning', () => {
     // warning is emitted from loadConfig(). The test is in config validation above.
     // Included here for completeness / cross-reference.
     expect(true).toBe(true); // covered by 'config validation' suite above
+  });
+});
+
+describe('/healthz (issue #9)', () => {
+  let server: TestServer | null = null;
+
+  afterEach(async () => {
+    if (server) {
+      await server.stop();
+      server = null;
+    }
+  });
+
+  it('returns 200 with status=ok when Qdrant + embeddings healthy', async () => {
+    server = await startTestServer();
+    const res = await httpRequest(`${server.baseUrl}/healthz`, 'GET', {});
+    expect(res.status).toBe(200);
+    const body = res.body as Record<string, string>;
+    expect(body.status).toBe('ok');
+    expect(body.qdrant).toBe('ok');
+    expect(body.embeddings).toBe('ok');
+  });
+
+  it('returns 503 when Qdrant is unreachable', async () => {
+    const qdrant = makeQdrantMock({ getCollection: vi.fn().mockRejectedValue(new Error('connection refused')) });
+    server = await startTestServer({}, { qdrant });
+    const res = await httpRequest(`${server.baseUrl}/healthz`, 'GET', {});
+    expect(res.status).toBe(503);
+    const body = res.body as Record<string, string>;
+    expect(body.status).toBe('degraded');
+    expect(body.qdrant).toBe('unreachable');
+  });
+
+  it('returns 503 when embeddings circuit breaker is open', async () => {
+    const embeddings = makeEmbeddingsMock('open');
+    server = await startTestServer({}, { embeddings });
+    const res = await httpRequest(`${server.baseUrl}/healthz`, 'GET', {});
+    expect(res.status).toBe(503);
+    const body = res.body as Record<string, string>;
+    expect(body.embeddings).toBe('breaker_open');
+  });
+
+  it('bypasses Origin validation (probes come from monitoring with no Origin)', async () => {
+    server = await startTestServer();
+    const res = await httpRequest(`${server.baseUrl}/healthz`, 'GET', {
+      Origin: 'https://attacker.example.com',
+    });
+    // /healthz is intentionally not Origin-gated — probes from nginx/monitoring don't carry Origin.
+    expect(res.status).toBe(200);
+  });
+
+  it('does not require Authorization', async () => {
+    server = await startTestServer();
+    const res = await httpRequest(`${server.baseUrl}/healthz`, 'GET', {});
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('/metrics (issue #9)', () => {
+  let server: TestServer | null = null;
+
+  afterEach(async () => {
+    if (server) {
+      await server.stop();
+      server = null;
+    }
+  });
+
+  it('returns 200 with Prometheus text and all mem_* metric names', async () => {
+    server = await startTestServer();
+    const res = await fetch(`${server.baseUrl}/metrics`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type') ?? '').toContain('text/plain');
+    const text = await res.text();
+    for (const name of [
+      'mem_http_sessions_active',
+      'mem_http_requests_total',
+      'mem_http_session_duration_seconds',
+      'mem_pat_lookups_total',
+      'mem_pat_active_count',
+      'mem_auth_failures_total',
+      'mem_embedding_calls_total',
+      'mem_embedding_latency_seconds',
+      'mem_embedding_dimension_mismatches_total',
+      'mem_memory_count',
+    ]) {
+      expect(text).toContain(name);
+    }
+  });
+
+  it('records origin_mismatch outcome counter on rejected request', async () => {
+    server = await startTestServer();
+    // Force an origin mismatch via /mcp
+    await httpRequest(`${server.baseUrl}/mcp`, 'POST', { Origin: 'https://wrong.example.com' }, mcpInitializeBody());
+    const text = await (await fetch(`${server.baseUrl}/metrics`)).text();
+    expect(text).toMatch(/mem_http_requests_total\{outcome="origin_mismatch"\} [1-9]/);
+  });
+
+  it('records pat_active_count after a successful refresh', async () => {
+    server = await startTestServer();
+    const text = await (await fetch(`${server.baseUrl}/metrics`)).text();
+    // startTestServer mints exactly one PAT.
+    expect(text).toMatch(/mem_pat_active_count 1/);
+  });
+
+  it('does not require Authorization', async () => {
+    server = await startTestServer();
+    const res = await fetch(`${server.baseUrl}/metrics`);
+    expect(res.status).toBe(200);
   });
 });
