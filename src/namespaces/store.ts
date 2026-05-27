@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AgentScope } from '../auth/types.js';
 import { DEFAULT_RETENTION, DEFAULT_RULES_INDEX_BODY, getDefaultQuota } from './defaults.js';
@@ -71,4 +71,40 @@ export async function createNamespaceSkeleton(
   await writeFile(join(dir, 'rules', 'INDEX.md'), DEFAULT_RULES_INDEX_BODY);
 
   return namespace;
+}
+
+export async function loadNamespace(
+  dataDir: string,
+  id: string,
+): Promise<Namespace | null> {
+  const path = join(namespaceDir(dataDir, id), '_namespace.json');
+  const raw = await readJsonIfExists(path);
+  return raw === null ? null : (JSON.parse(raw) as Namespace);
+}
+
+export async function loadMembers(
+  dataDir: string,
+  id: string,
+): Promise<NamespaceMember[] | null> {
+  const path = join(namespaceDir(dataDir, id), '_members.json');
+  const raw = await readJsonIfExists(path);
+  if (raw === null) return null;
+  const parsed = JSON.parse(raw) as NamespaceMembers;
+  return parsed.members;
+}
+
+async function readJsonIfExists(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, 'utf8');
+  } catch (err) {
+    if (
+      typeof err === 'object' &&
+      err !== null &&
+      'code' in err &&
+      (err as { code: unknown }).code === 'ENOENT'
+    ) {
+      return null;
+    }
+    throw err;
+  }
 }
