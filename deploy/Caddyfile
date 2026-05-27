@@ -1,0 +1,78 @@
+# Caddy reference configuration for shared-agents-memory
+#
+# Caddy handles TLS automatically via Let's Encrypt (ACME).
+#
+# Operator checklist:
+#   1. Replace memory.example.com with your actual domain.
+#   2. Ensure ports 80 and 443 are reachable from the internet (Caddy uses port 80
+#      for ACME HTTP-01 challenges and port 443 for HTTPS traffic).
+#   3. Copy this file to /etc/caddy/Caddyfile (or import it from your global Caddyfile).
+#   4. Validate:  caddy validate --config /etc/caddy/Caddyfile
+#   5. Reload:    systemctl reload caddy
+#
+# ADR-0003 §3.4 topology:
+#   internet --(TLS :443)--> Caddy --(loopback :8080)--> mcp container
+#
+# Security notes:
+#   - /metrics is blocked (loopback-only; use `curl http://127.0.0.1:8080/metrics`).
+#   - /healthz is intentionally unblocked for external uptime monitors.
+#   - Caddy adds HSTS, X-Content-Type-Options automatically via its default headers directive.
+#   - request_body max 1m matches memory.store 32k cap with headroom for JSON framing.
+
+memory.example.com {
+    # ------------------------------------------------------------------ TLS
+    # Caddy auto-obtains and renews the TLS certificate from Let's Encrypt.
+    # No manual certbot step required.
+    tls {
+        protocols tls1.3
+    }
+
+    # ------------------------------------------------------------------ Security headers
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        Permissions-Policy        "geolocation=(), camera=(), microphone=()"
+        # Remove the default Server header to reduce fingerprinting.
+        -Server
+    }
+
+    # ------------------------------------------------------------------ Request limits
+    # memory.store content is capped at 32k; 1m allows for JSON framing overhead.
+    request_body {
+        max_size 1m
+    }
+
+    # ------------------------------------------------------------------ Block /metrics externally
+    # Prometheus metrics are intentionally loopback-only.
+    # Block them at the proxy layer; 404 prevents information leakage.
+    respond /metrics 404
+
+    # ------------------------------------------------------------------ /healthz (public — uptime monitors)
+    handle /healthz {
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    # ------------------------------------------------------------------ MCP endpoint (POST + SSE)
+    #
+    # MCP Streamable HTTP transport (ADR-0003 §3.1):
+    #   POST /mcp  — JSON-RPC request/response
+    #   GET  /mcp  — server-sent event stream for async notifications
+    #
+    # flush_interval -1  — flush every write immediately; required for SSE.
+    # dial_timeout       — allow 5 s for the upstream to accept the connection.
+    # read_timeout       — matches MCP_HTTP_SESSION_IDLE_MIN default of 15 m (ADR-0003 §3.5).
+    handle /mcp* {
+        reverse_proxy 127.0.0.1:8080 {
+            flush_interval -1
+            dial_timeout   5s
+            # transport http directive sets read/write timeouts
+            transport http {
+                read_timeout  15m
+                write_timeout 15m
+            }
+            header_up X-Real-IP         {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+}
