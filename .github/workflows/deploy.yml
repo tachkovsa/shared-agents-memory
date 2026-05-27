@@ -1,0 +1,242 @@
+# deploy.yml — Build Docker image on push to main; deploy to VDS on manual dispatch.
+#
+# Two jobs:
+#
+#   build-image  — Runs on push to main AND manual workflow_dispatch.
+#                  Builds and pushes ghcr.io/tachkovsa/shared-agents-memory
+#                  tagged with the commit SHA and `:latest`.
+#
+#   deploy       — Runs ONLY on manual workflow_dispatch (NOT on push).
+#                  SSHs into the VDS, pulls the new image, and restarts the
+#                  mcp container. Waits for /healthz before marking success.
+#
+# Required GitHub secrets (set with `gh secret set <NAME>`):
+#
+#   VDS_HOST     — Public IP or hostname of the target VDS.
+#                  Example: "1.2.3.4" or "memory.example.com"
+#
+#   VDS_USER     — SSH username on the VDS (e.g. "sam" or "ubuntu").
+#                  This user must be in the `docker` group and have access
+#                  to /opt/shared-agents-memory and /etc/shared-agents-memory/.env.
+#
+#   VDS_SSH_KEY  — Private SSH key content (the full PEM block, including
+#                  "-----BEGIN OPENSSH PRIVATE KEY-----" and the closing line).
+#                  Generate a dedicated deploy key:
+#                    ssh-keygen -t ed25519 -C "sam-deploy" -f ~/.ssh/sam_deploy_key -N ""
+#                  Copy the PUBLIC key to the server:
+#                    ssh-copy-id -i ~/.ssh/sam_deploy_key.pub sam@<VDS_HOST>
+#                  Store the PRIVATE key as this secret:
+#                    gh secret set VDS_SSH_KEY < ~/.ssh/sam_deploy_key
+#
+# See docs/ops/vds-deploy.md §10 for the full setup guide.
+
+name: deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag to deploy (default: latest). Use a commit SHA to pin a specific build."
+        required: false
+        default: "latest"
+        type: string
+      dry_run:
+        description: "Dry run — print deploy commands without executing them."
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # build-image: Build and push the Docker image to GHCR.
+  # Triggered on every push to main so the image is ready before a deploy run.
+  # ---------------------------------------------------------------------------
+  build-image:
+    name: build-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write    # required to push to GHCR
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.sha_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags
+        id: meta
+        # Use env: so the SHA is never interpolated directly into the shell script.
+        # github.sha is a safe fixed-format value (40 hex chars), but keeping all
+        # context expressions out of run: bodies is the consistent safe pattern.
+        env:
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          SHORT="${GIT_SHA:0:7}"
+          echo "sha_tag=${GIT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "short_tag=${SHORT}" >> "$GITHUB_OUTPUT"
+          echo "Building image tags: ${GIT_SHA} and latest"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/tachkovsa/shared-agents-memory:${{ steps.meta.outputs.sha_tag }}
+            ghcr.io/tachkovsa/shared-agents-memory:latest
+          # Layer cache: read from the latest cache; write a new entry keyed to main.
+          cache-from: type=registry,ref=ghcr.io/tachkovsa/shared-agents-memory:cache-main
+          cache-to:   type=registry,ref=ghcr.io/tachkovsa/shared-agents-memory:cache-main,mode=max
+          provenance: false   # avoids multi-arch manifest list for single-platform builds
+
+  # ---------------------------------------------------------------------------
+  # deploy: Pull the new image on the VDS and restart the mcp container.
+  # Triggered ONLY on workflow_dispatch — the owner controls when production
+  # gets updated.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    needs: build-image
+    if: github.event_name == 'workflow_dispatch'
+
+    environment:
+      name: production
+      url: https://memory.example.com   # update this to your actual domain
+
+    steps:
+      - name: Resolve image tag
+        id: tag
+        # Both inputs are moved to env: to avoid direct expression interpolation
+        # in the shell script body (injection-safe pattern).
+        # inputs.image_tag is operator-supplied and could contain shell metacharacters.
+        # needs.build-image.outputs.image_tag comes from our own GITHUB_OUTPUT (safe),
+        # but consistent env: usage is still the correct pattern.
+        env:
+          INPUT_TAG: ${{ inputs.image_tag }}
+          BUILD_TAG: ${{ needs.build-image.outputs.image_tag }}
+        run: |
+          # Use the operator-supplied tag (from workflow_dispatch input),
+          # falling back to the SHA produced by build-image.
+          if [[ -n "$INPUT_TAG" && "$INPUT_TAG" != "latest" ]]; then
+            RESOLVED="$INPUT_TAG"
+          else
+            RESOLVED="$BUILD_TAG"
+          fi
+
+          # Validate: resolved tag must be alphanumeric + hyphens/dots/underscores only.
+          # Rejects shell metacharacters, path traversal, and other injection attempts.
+          if [[ ! "$RESOLVED" =~ ^[a-zA-Z0-9_.\-]+$ ]]; then
+            echo "ERROR: image_tag '${RESOLVED}' contains invalid characters." >&2
+            exit 1
+          fi
+
+          echo "tag=${RESOLVED}" >> "$GITHUB_OUTPUT"
+          echo "Deploying image tag: ${RESOLVED}"
+
+      - name: Deploy to VDS via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host:    ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key:     ${{ secrets.VDS_SSH_KEY }}
+          # Pass variables into the remote shell via envs.
+          envs: IMAGE_TAG,DRY_RUN
+          script_stop: true    # abort on first non-zero exit code
+          script: |
+            set -euo pipefail
+
+            IMAGE_TAG="${IMAGE_TAG}"
+            DRY_RUN="${DRY_RUN}"
+
+            # Wrap every real command so dry_run=true just prints instead.
+            run() {
+              if [[ "$DRY_RUN" == "true" ]]; then
+                echo "[dry-run] $*"
+              else
+                "$@"
+              fi
+            }
+
+            echo "==> Deploying shared-agents-memory IMAGE_TAG=${IMAGE_TAG} (dry_run=${DRY_RUN})"
+
+            run cd /opt/shared-agents-memory
+
+            # Pull latest compose files from the repo (handles docker-compose.prod.yml updates).
+            run git pull --ff-only
+
+            # Source the env file so IMAGE_TAG and HTTP_PUBLIC_ORIGIN are available.
+            # shellcheck source=/dev/null
+            if [[ "$DRY_RUN" != "true" ]]; then
+              set -a
+              source /etc/shared-agents-memory/.env
+              set +a
+            fi
+
+            # Export IMAGE_TAG so docker compose picks it up.
+            export IMAGE_TAG="${IMAGE_TAG}"
+
+            # Pull only the mcp image (Qdrant is pinned and unchanged).
+            run docker compose \
+              -f /opt/shared-agents-memory/docker-compose.yml \
+              -f /opt/shared-agents-memory/docker-compose.prod.yml \
+              pull mcp
+
+            # Restart the mcp container with zero-downtime (docker compose up -d
+            # recreates only the container whose image has changed).
+            run docker compose \
+              -f /opt/shared-agents-memory/docker-compose.yml \
+              -f /opt/shared-agents-memory/docker-compose.prod.yml \
+              up -d mcp
+
+            # Reclaim disk space from dangling image layers.
+            run docker image prune -f
+
+            echo "==> Deploy commands complete."
+        env:
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+          DRY_RUN:   ${{ inputs.dry_run || 'false' }}
+
+      - name: Wait for /healthz
+        if: inputs.dry_run != true
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host:    ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key:     ${{ secrets.VDS_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            echo "==> Waiting for /healthz (timeout 60s)..."
+
+            DEADLINE=$(( $(date +%s) + 60 ))
+            while true; do
+              STATUS=$(curl -sf -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/healthz || true)
+              if [[ "$STATUS" == "200" ]]; then
+                echo "==> /healthz returned 200 — deploy successful."
+                exit 0
+              fi
+              if [[ $(date +%s) -ge "$DEADLINE" ]]; then
+                echo "ERROR: /healthz did not return 200 within 60s (last status: ${STATUS})."
+                echo "Check container logs: docker logs sam-mcp --tail=50"
+                exit 1
+              fi
+              echo "  /healthz → ${STATUS:-no response} — retrying in 3s..."
+              sleep 3
+            done

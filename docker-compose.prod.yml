@@ -1,0 +1,64 @@
+# Production overlay — apply on top of docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Required env vars (set in /etc/shared-agents-memory/.env or export before running):
+#
+#   IMAGE_TAG             — image tag to deploy (default: latest)
+#   HTTP_PUBLIC_ORIGIN    — public HTTPS origin, e.g. https://memory.example.com (NO default; fail-loud)
+#   SAM_DATA_DIR          — host path for mcp data volume (default: /var/lib/shared-agents-memory/data)
+#   OPENROUTER_API_KEY    — required at runtime by src/config.ts
+#   SAM_PAT_PEPPER        — required at runtime by src/auth (32-byte hex secret)
+#
+# Optional env vars:
+#   QDRANT_API_KEY        — if set, Qdrant will require the key on every request
+#   QDRANT_COLLECTION     — collection name (default: agent_memories)
+#   OPENROUTER_BASE_URL   — default: https://openrouter.ai/api/v1
+#   OPENROUTER_MODEL      — default: qwen/qwen3-embedding-8b
+#
+# ADR-0003 §3.4 production topology:
+#   internet --(TLS :443)--> nginx/Caddy --(loopback :8080)--> mcp --(docker net :6333)--> qdrant
+
+services:
+  qdrant:
+    # Remove host-port publishings — Qdrant is docker-network-only in production
+    # (ADR-0003 §3.4). The mcp service reaches it via the internal docker network.
+    ports: !reset []
+
+  mcp:
+    # Pull from GHCR instead of building locally.
+    # IMAGE_TAG is set by the CD pipeline to the git SHA being deployed;
+    # fall back to `latest` for manual operator runs.
+    build: !reset null
+    image: ghcr.io/tachkovsa/shared-agents-memory:${IMAGE_TAG:-latest}
+    restart: always
+    # Remove the http profile restriction — in production this service always runs.
+    profiles: !reset []
+    environment:
+      # HTTP_PUBLIC_ORIGIN has no default here: an unset value will cause the
+      # server to reject all Origin-checked requests. Operators MUST set this.
+      HTTP_PUBLIC_ORIGIN: ${HTTP_PUBLIC_ORIGIN}
+    volumes:
+      # Replace the dev bind-mount (./data) with a host path under the canonical
+      # production location. Operator can override via SAM_DATA_DIR.
+      - type: bind
+        source: ${SAM_DATA_DIR:-/var/lib/shared-agents-memory/data}
+        target: /app/data
+
+volumes:
+  # Remap named volumes to explicit host paths so Docker volume commands still
+  # work (docker volume inspect, backup scripts) while keeping data on a known
+  # host path (ADR-0003 §3.4, docs/ops/qdrant-backup.md).
+  qdrant_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/shared-agents-memory/qdrant/storage
+
+  qdrant_snapshots:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/shared-agents-memory/qdrant/snapshots
