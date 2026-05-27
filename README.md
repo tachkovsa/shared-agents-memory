@@ -27,12 +27,14 @@ For the why behind each choice see [`docs/adr/`](docs/adr/).
 
 ## Quick start — connect an MCP client
 
-### Live endpoint
+### Endpoint shape
 
 | Mode | URL |
 |---|---|
-| Current (no TLS yet) | `http://217.177.47.182:8080/mcp` (loopback-only, reach via SSH tunnel) |
-| Production (after DNS + certbot) | `https://memory.example.com/mcp` |
+| Pre-domain bring-up | `http://<vds-host>:8080/mcp` — loopback-only on the host; reach via SSH tunnel or from-server `curl` |
+| Production (DNS + certbot) | `https://<your-domain>/mcp` |
+
+The operator keeps the actual host out of the repo. For the running deployment, see your internal infra docs / password manager.
 
 ### 1. Get a PAT for your agent
 
