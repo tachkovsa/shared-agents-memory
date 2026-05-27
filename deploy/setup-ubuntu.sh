@@ -18,8 +18,10 @@
 #      with sam:sam ownership.
 #   4. Installs nginx or Caddy depending on --proxy.
 #   5. Configures UFW (deny all in, allow SSH/HTTP/HTTPS).
-#   6. Drops a placeholder /etc/shared-agents-memory/.env for operator to fill.
-#   7. Prints next-step instructions.
+#   6. Installs and configures fail2ban for sshd (cheap brute-force mitigation).
+#   7. Drops a placeholder /etc/shared-agents-memory/.env for operator to fill.
+#   8. Prepares /opt/shared-agents-memory directory.
+#   9. Prints next-step instructions.
 #
 # This script is idempotent: safe to run multiple times on the same host.
 # It will not overwrite existing config files unless --yes is passed.
@@ -222,8 +224,73 @@ else
     fi
 fi
 
-# --------------------------------------------------------------------------- 6. Environment file
-log "Step 6: Drop placeholder /etc/shared-agents-memory/.env"
+# --------------------------------------------------------------------------- 6. fail2ban
+log "Step 6: Install + configure fail2ban (sshd jail)"
+# Cheap SSH brute-force mitigation. We can't disable root/password SSH per
+# many providers' support requirements, so fail2ban is the next layer down.
+# backend=systemd reads journald (no rsyslog/auth.log dependency on Ubuntu
+# 24); banaction=ufw uses the UFW firewall configured in Step 5.
+# Empirically on this project's first VDS, this config banned 4 active
+# brute-forcers within seconds of starting (their open sessions had
+# accumulated 5+ failed root-password tries already).
+
+if ! command -v fail2ban-client &>/dev/null; then
+    apt-get install -y -qq fail2ban
+    log "  fail2ban installed: $(fail2ban-client --version 2>&1 | head -1)"
+else
+    log "  fail2ban already installed: $(fail2ban-client --version 2>&1 | head -1)"
+fi
+
+F2B_CONFIG=/etc/fail2ban/jail.local
+F2B_DESIRED=$(cat <<'F2BEOF'
+# Managed by deploy/setup-ubuntu.sh. Hand-edit and the next script run will
+# overwrite — drop a *.local override under /etc/fail2ban/jail.d/ instead.
+[DEFAULT]
+ignoreip = 127.0.0.1/8 ::1
+findtime = 10m
+bantime = 1h
+maxretry = 5
+banaction = ufw
+backend = systemd
+bantime.increment = true
+bantime.factor = 2
+bantime.maxtime = 1d
+
+[sshd]
+enabled = true
+port = ssh
+maxretry = 5
+F2BEOF
+)
+
+WRITE_F2B=true
+if [[ -f "$F2B_CONFIG" ]] && [[ "$F2B_DESIRED" == "$(cat "$F2B_CONFIG")" ]]; then
+    log "  $F2B_CONFIG already matches desired content."
+    WRITE_F2B=false
+elif [[ -f "$F2B_CONFIG" ]]; then
+    if ! confirm "  $F2B_CONFIG exists with different content — overwrite?"; then
+        warn "  Keeping existing $F2B_CONFIG. Drop overrides into /etc/fail2ban/jail.d/."
+        WRITE_F2B=false
+    fi
+fi
+
+if $WRITE_F2B; then
+    printf '%s\n' "$F2B_DESIRED" > "$F2B_CONFIG"
+    log "  Wrote $F2B_CONFIG"
+fi
+
+systemctl enable fail2ban >/dev/null 2>&1 || true
+systemctl restart fail2ban
+sleep 1
+if systemctl is-active --quiet fail2ban; then
+    log "  fail2ban active. Current sshd jail:"
+    fail2ban-client status sshd 2>&1 | sed 's/^/    /' || true
+else
+    warn "  fail2ban failed to start. Check: journalctl -u fail2ban -n 30"
+fi
+
+# --------------------------------------------------------------------------- 7. Environment file
+log "Step 7: Drop placeholder /etc/shared-agents-memory/.env"
 # The embeddings provider key in the .env heredoc below is EMBEDDINGS_API_KEY
 # (not provider-specific). Default URL/model target OpenRouter+qwen per
 # ADR-0005, but any OpenAI-compatible endpoint works (override via
@@ -303,8 +370,8 @@ if [[ -f "$ENV_FILE" ]]; then
     chmod 0600 "$ENV_FILE"
 fi
 
-# --------------------------------------------------------------------------- 7. App directory
-log "Step 7: Prepare /opt/shared-agents-memory"
+# --------------------------------------------------------------------------- 8. App directory
+log "Step 8: Prepare /opt/shared-agents-memory"
 
 if [[ -d /opt/shared-agents-memory ]]; then
     log "  /opt/shared-agents-memory already exists."
