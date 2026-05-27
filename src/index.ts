@@ -18,6 +18,7 @@ import { loadConfig } from './config.js';
 import { EmbeddingClient } from './embeddings.js';
 import { makeOrphanPruneCallback, registerNamespaceTools } from './namespaces/tools.js';
 import { createQdrantClient, initCollection } from './qdrant.js';
+import { registerRuleTools } from './rules/index.js';
 import { registerTools } from './tools.js';
 
 const STDIO_PAT_ENV_VAR = 'LOCAL_STDIO_AGENT_PAT';
@@ -111,6 +112,12 @@ async function main(): Promise<void> {
     auditor,
     sessionId,
     pepper,
+    dataDir: config.storage.dataDir,
+  });
+
+  registerRuleTools(server, {
+    sessionPat,
+    auditor,
     dataDir: config.storage.dataDir,
   });
 
