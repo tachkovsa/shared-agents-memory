@@ -3,3 +3,13 @@ dist/
 .env
 *.tsbuildinfo
 coverage/
+
+# Local Claude Code config
+.claude/settings.local.json
+.claude/worktrees/
+
+# Auth data — never commit
+data/_auth/.pepper
+data/_auth/pats.jsonl
+data/_auth/.bootstrap_token
+data/_auth/.bootstrap_done

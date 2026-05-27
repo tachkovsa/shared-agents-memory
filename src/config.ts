@@ -15,6 +15,9 @@ export interface Config {
   server: {
     port: number;
   };
+  storage: {
+    dataDir: string;
+  };
 }
 
 function requireEnv(name: string): string {
@@ -43,6 +46,9 @@ export function loadConfig(): Config {
     },
     server: {
       port: Number(process.env['MCP_SERVER_PORT'] ?? '3000'),
+    },
+    storage: {
+      dataDir: process.env['DATA_DIR'] ?? './data',
     },
   };
 }
