@@ -26,6 +26,13 @@ export interface PatToolDeps {
   consumed?: ConsumedConfirmations;
   confirmationTtlMs?: number;
   now?: () => Date;
+  /**
+   * Optional hook called after a successful pat.revoke. Receives the
+   * agent_identity of the revoked PAT. Used by the namespace tools layer to
+   * prune orphaned _members.json entries when a PAT is the last token for
+   * that identity (ADR-0002 §5 Q3).
+   */
+  onPatRevoked?: (revokedAgentIdentity: string) => Promise<void>;
 }
 
 const scopeSchema = z.enum(ALL_SCOPES as readonly [AgentScope, ...AgentScope[]]);
@@ -122,6 +129,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
     consumed = new ConsumedConfirmations(deps.now),
     confirmationTtlMs = DEFAULT_CONFIRMATION_TTL_MS,
     now = () => new Date(),
+    onPatRevoked,
   } = deps;
 
   const isServiceAdmin = sessionPat.scopes.includes('service:admin');
@@ -342,6 +350,12 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
           reason: revoked.revoked_reason,
           by: sessionPat.agent_identity,
         });
+        // Prune orphaned namespace memberships if this was the last PAT for
+        // the agent identity (ADR-0002 §5 Q3). The check for "last PAT" is
+        // performed inside onPatRevoked (via makeOrphanPruneCallback).
+        if (onPatRevoked) {
+          await onPatRevoked(revoked.agent_identity);
+        }
         return jsonResponse({
           pat_id: revoked.id,
           revoked_at: revoked.revoked_at,

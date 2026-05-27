@@ -6,7 +6,8 @@ export type AuthAuditEvent =
   | 'auth.failure'
   | 'pat.minted'
   | 'pat.revoked'
-  | 'auth.rate_limited';
+  | 'auth.rate_limited'
+  | 'namespace.member_removed';
 
 export interface AuditWriterOptions {
   path: string;
