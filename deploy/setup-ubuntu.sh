@@ -111,8 +111,25 @@ log "Step 2: Create 'sam' service user"
 if id sam &>/dev/null; then
     log "  User 'sam' already exists."
 else
-    useradd --system --no-create-home --shell /usr/sbin/nologin sam
+    # --create-home: GH Actions SSH writes ~/.ssh/authorized_keys.
+    # --shell /bin/bash: sshd refuses an interactive session under nologin.
+    useradd --system --create-home --shell /bin/bash sam
     log "  User 'sam' created."
+fi
+
+# Idempotency: fix shell on a pre-existing nologin sam (from an older setup-ubuntu.sh).
+CURRENT_SHELL=$(getent passwd sam | cut -d: -f7)
+if [[ "$CURRENT_SHELL" != "/bin/bash" ]]; then
+    chsh -s /bin/bash sam
+    log "  sam shell updated to /bin/bash (was $CURRENT_SHELL)."
+fi
+
+# Ensure /home/sam exists and is owned by sam (some hosts pre-create it as root).
+if [[ ! -d /home/sam ]]; then
+    install -d -m 0755 -o sam -g sam /home/sam
+    log "  Created /home/sam."
+else
+    chown sam:sam /home/sam
 fi
 
 # Add sam to the docker group so it can run docker commands.
@@ -209,7 +226,11 @@ fi
 log "Step 6: Drop placeholder /etc/shared-agents-memory/.env"
 
 mkdir -p /etc/shared-agents-memory
-chmod 0750 /etc/shared-agents-memory
+# root:sam 0770 — the CD pipeline writes a tmp file alongside .env when
+# rotating OPENROUTER_API_KEY (atomic awk-replace + mv) and needs group-write
+# on the directory. Idempotent: re-chown/-chmod on every setup run.
+chown root:sam /etc/shared-agents-memory
+chmod 0770 /etc/shared-agents-memory
 
 ENV_FILE="/etc/shared-agents-memory/.env"
 
@@ -259,9 +280,19 @@ SAM_PAT_PEPPER=
 # QDRANT_COLLECTION=agent_memories
 ENVEOF
 
-    chown root:sam "$ENV_FILE"
-    chmod 0640 "$ENV_FILE"
+    # sam:sam 0600 — the CD pipeline awk-replaces OPENROUTER_API_KEY in place
+    # and runs as sam over SSH, so sam must own + write the file. root can
+    # still read everything anyway.
+    chown sam:sam "$ENV_FILE"
+    chmod 0600 "$ENV_FILE"
     log "  Created $ENV_FILE"
+fi
+
+# Idempotency: fix ownership/perms on a pre-existing .env from an older
+# setup-ubuntu.sh (was root:sam 0640, now sam:sam 0600).
+if [[ -f "$ENV_FILE" ]]; then
+    chown sam:sam "$ENV_FILE"
+    chmod 0600 "$ENV_FILE"
 fi
 
 # --------------------------------------------------------------------------- 7. App directory
