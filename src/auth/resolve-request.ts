@@ -1,6 +1,10 @@
 import { loadMembers, loadNamespace } from '../namespaces/store.js';
 import { PatStore } from './pat-store.js';
-import { AuthError, type RequestContext } from './request-context.js';
+import {
+  AuthError,
+  type RequestContext,
+  type ServiceRequestContext,
+} from './request-context.js';
 import { ALL_SCOPES, type AgentPat, type AgentScope } from './types.js';
 
 export interface ResolveRequestOptions {
@@ -107,4 +111,24 @@ export async function resolveRequest(
     requiredScope: opts.requiredScope,
     dataDir: opts.dataDir,
   });
+}
+
+export function authorizeServiceAccess(
+  pat: AgentPat,
+  requiredScope: AgentScope,
+): ServiceRequestContext {
+  if (!pat.scopes.includes(requiredScope)) {
+    throw new AuthError(
+      'scope_insufficient',
+      `scope "${requiredScope}" not granted on token ${pat.id}`,
+      pat.token_prefix,
+      { requiredScope, granted: [...pat.scopes] },
+    );
+  }
+  return {
+    agentId: pat.agent_identity,
+    scopes: [...pat.scopes],
+    patId: pat.id,
+    tokenPrefix: pat.token_prefix,
+  };
 }

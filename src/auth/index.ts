@@ -17,6 +17,7 @@ export {
 export {
   PatStore,
   PatNotFoundError,
+  PatRotationStateError,
   DEFAULT_CACHE_TTL_MS,
 } from './pat-store.js';
 export {
@@ -35,14 +36,26 @@ export {
   AuthError,
   type AuthFailureReason,
   type RequestContext,
+  type ServiceRequestContext,
 } from './request-context.js';
 export {
   resolvePat,
   resolveRequest,
   authorizeNamespaceAccess,
+  authorizeServiceAccess,
   type ResolveRequestOptions,
   type AuthorizeOptions,
 } from './resolve-request.js';
+export {
+  canonicalJsonHash,
+  makeConfirmation,
+  verifyConfirmation,
+  ConsumedConfirmations,
+  DEFAULT_CONFIRMATION_TTL_MS,
+  type ConfirmationPayload,
+  type VerifyConfirmationResult,
+} from './confirmation.js';
+export { registerPatTools, type PatToolDeps } from './tools.js';
 export {
   AuthAuditWriter,
   auditPathForDataDir,
