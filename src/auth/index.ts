@@ -19,3 +19,15 @@ export {
   PatNotFoundError,
   DEFAULT_CACHE_TTL_MS,
 } from './pat-store.js';
+export {
+  runBootstrapIfNeeded,
+  deriveBootstrapPaths,
+  stderrLogger,
+  BootstrapStateError,
+} from './bootstrap.js';
+export type {
+  BootstrapLogger,
+  BootstrapPaths,
+  BootstrapResult,
+  RunBootstrapOptions,
+} from './bootstrap.js';
