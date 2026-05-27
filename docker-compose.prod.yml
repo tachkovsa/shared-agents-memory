@@ -34,6 +34,12 @@ services:
     restart: always
     # Remove the http profile restriction — in production this service always runs.
     profiles: !reset []
+    # Run the container as the host's data-owning identity. The image's
+    # default USER is `node` (uid 1000), but the bind-mounted data/ directory
+    # is owned by the host `sam` user; without this override the container
+    # cannot write its own pepper/PAT/audit files. Defaults are the
+    # uid/gid `deploy/setup-ubuntu.sh` creates for `sam`.
+    user: "${SAM_UID:-999}:${SAM_GID:-987}"
     environment:
       # HTTP_PUBLIC_ORIGIN has no default here: an unset value will cause the
       # server to reject all Origin-checked requests. Operators MUST set this.
