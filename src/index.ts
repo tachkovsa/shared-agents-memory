@@ -16,10 +16,10 @@ import {
 } from './auth/index.js';
 import { loadConfig } from './config.js';
 import { EmbeddingClient } from './embeddings.js';
+import { MemoryService, registerMemoryTools } from './memory/index.js';
 import { makeOrphanPruneCallback, registerNamespaceTools } from './namespaces/tools.js';
 import { createQdrantClient, initCollection } from './qdrant.js';
 import { registerRuleTools } from './rules/index.js';
-import { registerTools } from './tools.js';
 
 const STDIO_PAT_ENV_VAR = 'LOCAL_STDIO_AGENT_PAT';
 
@@ -86,10 +86,14 @@ async function main(): Promise<void> {
     version: '0.1.0',
   });
 
-  registerTools(server, {
+  const memoryService = new MemoryService({
     qdrant,
     embeddings,
-    config,
+    collection: config.qdrant.collectionName,
+  });
+
+  registerMemoryTools(server, {
+    service: memoryService,
     sessionPat,
     auditor,
     dataDir: config.storage.dataDir,
