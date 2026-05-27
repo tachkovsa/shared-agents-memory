@@ -16,6 +16,7 @@ import {
 } from './auth/index.js';
 import { loadConfig } from './config.js';
 import { EmbeddingClient } from './embeddings.js';
+import { makeOrphanPruneCallback, registerNamespaceTools } from './namespaces/tools.js';
 import { createQdrantClient, initCollection } from './qdrant.js';
 import { registerTools } from './tools.js';
 
@@ -93,12 +94,24 @@ async function main(): Promise<void> {
     dataDir: config.storage.dataDir,
   });
 
+  const sessionId = createId();
+
   registerPatTools(server, {
     patStore,
     sessionPat,
     auditor,
-    sessionId: createId(),
+    sessionId,
     pepper,
+    onPatRevoked: makeOrphanPruneCallback(patStore, config.storage.dataDir, auditor),
+  });
+
+  registerNamespaceTools(server, {
+    patStore,
+    sessionPat,
+    auditor,
+    sessionId,
+    pepper,
+    dataDir: config.storage.dataDir,
   });
 
   const transport = new StdioServerTransport();
