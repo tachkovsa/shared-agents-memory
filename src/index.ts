@@ -1,27 +1,15 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { createId } from '@paralleldrive/cuid2';
 import {
-  AuthAuditWriter,
-  AuthError,
-  auditPathForDataDir,
   deriveBootstrapPaths,
   loadOrInitPepper,
   PatStore,
   PEPPER_ENV_VAR,
-  registerPatTools,
-  resolvePat,
-  resolveSampleRate,
   runBootstrapIfNeeded,
 } from './auth/index.js';
 import { loadConfig } from './config.js';
 import { EmbeddingClient } from './embeddings.js';
-import { MemoryService, registerMemoryTools } from './memory/index.js';
-import { makeOrphanPruneCallback, registerNamespaceTools } from './namespaces/tools.js';
-import { createQdrantClient, initCollection } from './qdrant.js';
-import { registerRuleTools } from './rules/index.js';
-
-const STDIO_PAT_ENV_VAR = 'LOCAL_STDIO_AGENT_PAT';
+import { createQdrantClient } from './qdrant.js';
+import { runHttpTransport } from './transport/http.js';
+import { runStdioTransport } from './transport/stdio.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -41,92 +29,20 @@ async function main(): Promise<void> {
     paths,
   });
 
-  const sessionSecret = process.env[STDIO_PAT_ENV_VAR];
-  if (!sessionSecret) {
-    if (bootstrap.bootstrapped) {
-      process.stderr.write(
-        `\n${STDIO_PAT_ENV_VAR} is not set. Copy the bootstrap token above, ` +
-          `set it as ${STDIO_PAT_ENV_VAR}, and restart the server.\n`,
-      );
-    } else {
-      process.stderr.write(
-        `\n${STDIO_PAT_ENV_VAR} is not set. The server cannot accept tool calls ` +
-          `without an agent identity bound at startup. Set ${STDIO_PAT_ENV_VAR} to a ` +
-          `valid sam_pat_* token and restart.\n`,
-      );
-    }
-    process.exit(1);
+  if (config.transport === 'stdio' && bootstrap.bootstrapped) {
+    process.stderr.write(
+      '\nBootstrap complete. Set LOCAL_STDIO_AGENT_PAT to the token above and restart.\n',
+    );
   }
-
-  let sessionPat;
-  try {
-    sessionPat = resolvePat(patStore, sessionSecret);
-  } catch (err) {
-    if (err instanceof AuthError) {
-      process.stderr.write(
-        `\nFailed to resolve ${STDIO_PAT_ENV_VAR}: ${err.reason} — ${err.message}.\n`,
-      );
-      process.exit(1);
-    }
-    throw err;
-  }
-
-  const auditor = new AuthAuditWriter({
-    path: auditPathForDataDir(config.storage.dataDir),
-    successSampleRate: resolveSampleRate(process.env),
-  });
 
   const qdrant = createQdrantClient(config);
-  await initCollection(qdrant, config.qdrant.collectionName);
-
   const embeddings = new EmbeddingClient(config);
 
-  const server = new McpServer({
-    name: 'shared-agents-memory',
-    version: '0.1.0',
-  });
-
-  const memoryService = new MemoryService({
-    qdrant,
-    embeddings,
-    collection: config.qdrant.collectionName,
-  });
-
-  registerMemoryTools(server, {
-    service: memoryService,
-    sessionPat,
-    auditor,
-    dataDir: config.storage.dataDir,
-  });
-
-  const sessionId = createId();
-
-  registerPatTools(server, {
-    patStore,
-    sessionPat,
-    auditor,
-    sessionId,
-    pepper,
-    onPatRevoked: makeOrphanPruneCallback(patStore, config.storage.dataDir, auditor),
-  });
-
-  registerNamespaceTools(server, {
-    patStore,
-    sessionPat,
-    auditor,
-    sessionId,
-    pepper,
-    dataDir: config.storage.dataDir,
-  });
-
-  registerRuleTools(server, {
-    sessionPat,
-    auditor,
-    dataDir: config.storage.dataDir,
-  });
-
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  if (config.transport === 'http') {
+    await runHttpTransport({ config, patStore, pepper, qdrant, embeddings });
+  } else {
+    await runStdioTransport({ config, patStore, pepper, qdrant, embeddings });
+  }
 }
 
 main().catch((err) => {
