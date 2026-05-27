@@ -167,10 +167,11 @@ jobs:
           envs: IMAGE_TAG,DRY_RUN,OPENROUTER_API_KEY
           script_stop: true    # abort on first non-zero exit code
           script: |
-            set -euo pipefail
+            set -eo pipefail
+            set -x
 
-            IMAGE_TAG="${IMAGE_TAG}"
-            DRY_RUN="${DRY_RUN}"
+            IMAGE_TAG="${IMAGE_TAG:-latest}"
+            DRY_RUN="${DRY_RUN:-false}"
 
             # Wrap every real command so dry_run=true just prints instead.
             run() {
@@ -183,10 +184,10 @@ jobs:
 
             echo "==> Deploying shared-agents-memory IMAGE_TAG=${IMAGE_TAG} (dry_run=${DRY_RUN})"
 
-            run cd /opt/shared-agents-memory
+            cd /opt/shared-agents-memory
 
             # Pull latest compose files from the repo (handles docker-compose.prod.yml updates).
-            run git pull --ff-only
+            git pull --ff-only
 
             # Sync OPENROUTER_API_KEY from the GH secret into the server-side
             # .env so the container's runtime env survives restarts and reboots.
