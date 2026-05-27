@@ -82,6 +82,61 @@ export class PatStore {
     return { pat, secret: token };
   }
 
+  async rotate(oldPatId: string, mintInput: MintInput): Promise<MintResult> {
+    const current = this.byId.get(oldPatId);
+    if (!current) {
+      throw new PatNotFoundError(oldPatId);
+    }
+    if (current.is_revoked) {
+      throw new PatRotationStateError(
+        `cannot rotate revoked PAT ${oldPatId}`,
+      );
+    }
+
+    const token = generateToken();
+    const secret = token.slice(TOKEN_NAMESPACE.length);
+    const prefix = secret.slice(0, 12);
+    const hash = hashSecret(secret, this.pepper);
+    const ts = this.now().toISOString();
+
+    const newPat: AgentPat = {
+      id: createId(),
+      display_name: mintInput.display_name,
+      token_prefix: prefix,
+      token_hash: hash,
+      agent_identity: mintInput.agent_identity,
+      allowed_namespaces: [...mintInput.allowed_namespaces],
+      scopes: [...mintInput.scopes] as AgentScope[],
+      created_at: ts,
+      created_by: mintInput.created_by,
+      expires_at: mintInput.expires_at ?? null,
+      last_used_at: null,
+      is_revoked: false,
+      revoked_at: null,
+      revoked_reason: null,
+    };
+
+    const revokedOld: AgentPat = {
+      ...current,
+      is_revoked: true,
+      revoked_at: ts,
+      revoked_reason: `rotated; replaced by ${newPat.id}`,
+    };
+
+    const buffer =
+      `${JSON.stringify(newPat)}\n` +
+      `${JSON.stringify({ ...revokedOld, _supersedes: oldPatId } satisfies PatRecord)}\n`;
+
+    await mkdir(dirname(this.storePath), { recursive: true });
+    await appendFile(this.storePath, buffer, { mode: 0o600 });
+
+    this.index(newPat);
+    this.index(revokedOld);
+    this.invalidateCacheForId(oldPatId);
+
+    return { pat: newPat, secret: token };
+  }
+
   async revoke(patId: string, reason: string): Promise<AgentPat> {
     const current = this.byId.get(patId);
     if (!current) {
@@ -201,6 +256,13 @@ export class PatNotFoundError extends Error {
   constructor(patId: string) {
     super(`PAT not found: ${patId}`);
     this.name = 'PatNotFoundError';
+  }
+}
+
+export class PatRotationStateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PatRotationStateError';
   }
 }
 

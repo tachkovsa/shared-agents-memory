@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { hashSecret, TOKEN_NAMESPACE } from './hash.js';
-import { PatNotFoundError, PatStore } from './pat-store.js';
+import {
+  PatNotFoundError,
+  PatRotationStateError,
+  PatStore,
+} from './pat-store.js';
 import type { AgentPat, PatRecord } from './types.js';
 
 const PEPPER = Buffer.alloc(32, 0x42);
@@ -208,6 +212,100 @@ describe('PatStore JSONL fold-on-load', () => {
   it('initialises cleanly when the store file does not exist', async () => {
     const store = await openStore();
     expect(store.list()).toEqual([]);
+  });
+});
+
+describe('PatStore.rotate', () => {
+  it('mints a new PAT and revokes the old one in a single append', async () => {
+    const store = await openStore();
+    const { pat: oldPat, secret: oldSecret } = await mintDefault(store, {
+      display_name: 'before-rotation',
+    });
+
+    const rotated = await store.rotate(oldPat.id, {
+      display_name: 'after-rotation',
+      agent_identity: oldPat.agent_identity,
+      allowed_namespaces: oldPat.allowed_namespaces,
+      scopes: oldPat.scopes,
+      created_by: 'admin',
+      expires_at: oldPat.expires_at,
+    });
+
+    expect(rotated.pat.id).not.toBe(oldPat.id);
+    expect(rotated.secret).not.toBe(oldSecret);
+    expect(rotated.pat.scopes).toEqual(oldPat.scopes);
+    expect(rotated.pat.allowed_namespaces).toEqual(oldPat.allowed_namespaces);
+
+    // New secret resolves to the new PAT.
+    const newLookup = store.lookup(rotated.secret);
+    expect(newLookup.ok).toBe(true);
+    if (newLookup.ok) expect(newLookup.pat.id).toBe(rotated.pat.id);
+
+    // Old secret is now revoked.
+    const oldLookup = store.lookup(oldSecret);
+    expect(oldLookup.ok).toBe(false);
+    if (!oldLookup.ok) expect(oldLookup.reason).toBe('revoked');
+
+    // Only ONE additional flush — the JSONL grew by exactly 2 lines (initial mint + 2 rotation lines).
+    const raw = await readFile(storePath, 'utf8');
+    const lines = raw.trim().split('\n');
+    expect(lines).toHaveLength(3);
+    const second = JSON.parse(lines[1]!) as PatRecord;
+    const third = JSON.parse(lines[2]!) as PatRecord;
+    expect(second.id).toBe(rotated.pat.id);
+    expect(second.is_revoked).toBe(false);
+    expect(third.id).toBe(oldPat.id);
+    expect(third.is_revoked).toBe(true);
+    expect(third._supersedes).toBe(oldPat.id);
+    expect(third.revoked_reason).toContain(rotated.pat.id);
+  });
+
+  it('throws PatNotFoundError when rotating an unknown id', async () => {
+    const store = await openStore();
+    await expect(
+      store.rotate('missing', {
+        display_name: 'x',
+        agent_identity: 'agent',
+        allowed_namespaces: ['personal'],
+        scopes: ['memory:read'],
+        created_by: 'admin',
+      }),
+    ).rejects.toBeInstanceOf(PatNotFoundError);
+  });
+
+  it('refuses to rotate an already-revoked PAT', async () => {
+    const store = await openStore();
+    const { pat } = await mintDefault(store);
+    await store.revoke(pat.id, 'manual');
+    await expect(
+      store.rotate(pat.id, {
+        display_name: 'x',
+        agent_identity: pat.agent_identity,
+        allowed_namespaces: pat.allowed_namespaces,
+        scopes: pat.scopes,
+        created_by: 'admin',
+      }),
+    ).rejects.toBeInstanceOf(PatRotationStateError);
+  });
+
+  it('survives reload — fold-on-load reflects rotation', async () => {
+    const store = await openStore();
+    const { pat: oldPat, secret: oldSecret } = await mintDefault(store);
+    const rotated = await store.rotate(oldPat.id, {
+      display_name: oldPat.display_name,
+      agent_identity: oldPat.agent_identity,
+      allowed_namespaces: oldPat.allowed_namespaces,
+      scopes: oldPat.scopes,
+      created_by: 'admin',
+      expires_at: oldPat.expires_at,
+    });
+
+    const reopened = await PatStore.open({ storePath, pepper: PEPPER });
+    const newLookup = reopened.lookup(rotated.secret);
+    expect(newLookup.ok).toBe(true);
+    const oldLookup = reopened.lookup(oldSecret);
+    expect(oldLookup.ok).toBe(false);
+    if (!oldLookup.ok) expect(oldLookup.reason).toBe('revoked');
   });
 });
 

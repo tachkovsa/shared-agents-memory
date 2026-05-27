@@ -9,6 +9,13 @@ export interface RequestContext {
   tokenPrefix: string;
 }
 
+export interface ServiceRequestContext {
+  agentId: string;
+  scopes: AgentScope[];
+  patId: string;
+  tokenPrefix: string;
+}
+
 export type AuthFailureReason =
   | 'missing'
   | 'malformed'
