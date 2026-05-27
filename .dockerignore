@@ -1,0 +1,15 @@
+node_modules
+dist
+coverage
+.env
+.env.*
+!.env.example
+.git
+.github
+.gitignore
+*.log
+*.tsbuildinfo
+docs
+README.md
+LICENSE
+data

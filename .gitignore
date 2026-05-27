@@ -1,5 +1,15 @@
 node_modules/
 dist/
 .env
+.env.local
+.env.*.local
 *.tsbuildinfo
 coverage/
+
+# Runtime state — namespace dir, rule store, PAT store, audit logs.
+# Bind-mounted into the `mcp` container by docker-compose; created on first boot.
+data/
+
+# Claude Code per-user state (shared .claude/settings.json stays trackable).
+.claude/settings.local.json
+.claude/worktrees/
