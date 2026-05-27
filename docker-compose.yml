@@ -1,0 +1,104 @@
+name: shared-agents-memory
+
+# Dev quickstart:    docker compose up -d qdrant
+# Then run the MCP server locally:    npm run dev
+#
+# HTTP-mode (multi-agent shared deployment): docker compose --profile http up -d
+# But note: TRANSPORT=http ships with issue #22 (ADR-0003). Until then the
+# `mcp` service starts but the server exits because the transport is missing.
+#
+# Production layout is described in docs/runtime.md (TLS reverse proxy on the
+# host, MCP on loopback, Qdrant on the internal docker network only).
+
+services:
+  qdrant:
+    # Pin to a server version that matches the @qdrant/js-client-rest minor
+    # (currently 1.18.x in package-lock). Qdrant emits a startup warning if
+    # client and server minor differ by more than 1.
+    image: qdrant/qdrant:v1.18.1
+    container_name: sam-qdrant
+    restart: unless-stopped
+    ports:
+      # REST + gRPC, bound to host loopback only. In production the MCP service
+      # talks to Qdrant over the internal docker network — remove these
+      # publishings in your production override.
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    environment:
+      # Pass-through: only forwarded into the container if QDRANT__SERVICE__API_KEY
+      # is actually set in the host env / .env file. An empty value would enable
+      # auth with an empty key (Qdrant returns 401 on every request), so we
+      # deliberately don't default to an empty string.
+      QDRANT__SERVICE__API_KEY:
+    volumes:
+      - qdrant_storage:/qdrant/storage
+      - qdrant_snapshots:/qdrant/snapshots
+    healthcheck:
+      # /healthz, /livez, /readyz all require the api-key header once
+      # QDRANT__SERVICE__API_KEY is set, which makes a probe brittle.
+      # A TCP probe stays correct regardless of auth config.
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  mcp:
+    # Parked behind the `http` profile — HTTP transport lands in issue #22
+    # (ADR-0003 §3.4). Until then run the server outside Docker:
+    #     npm run dev
+    profiles: ["http"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: shared-agents-memory:local
+    container_name: sam-mcp
+    restart: unless-stopped
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    ports:
+      # Loopback-only publishing. A TLS reverse proxy on the host (nginx /
+      # Caddy) is the only thing that should reach this port in production.
+      - "127.0.0.1:8080:8080"
+    environment:
+      TRANSPORT: http
+      # Inside the container we bind to all interfaces so the docker-published
+      # port works; host-side isolation is enforced by `ports: 127.0.0.1:...`.
+      # See ADR-0003 §3.3 for the bare-metal rule (127.0.0.1 on the host).
+      HTTP_BIND_HOST: 0.0.0.0
+      HTTP_BIND_PORT: "8080"
+      HTTP_PUBLIC_ORIGIN: ${HTTP_PUBLIC_ORIGIN:-http://127.0.0.1:8080}
+      QDRANT_URL: http://qdrant:6333
+      # Same pass-through trick. The MCP client only sends `api-key` when this
+      # is set. In production, set BOTH QDRANT_API_KEY and QDRANT__SERVICE__API_KEY
+      # in .env to the same secret.
+      QDRANT_API_KEY:
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-agent_memories}
+      # Pass-through — required at runtime by src/config.ts, not at compose time
+      # (so `docker compose up qdrant` alone doesn't need an OpenRouter key).
+      OPENROUTER_API_KEY:
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-qwen/qwen3-embedding-8b}
+    volumes:
+      # Per-namespace rules, members, quotas, audit log (ADR-0002 §3.6) and
+      # PAT store + pepper (ADR-0004 §3). Bind-mount to the repo root for
+      # easy inspection in dev; production should bind a path under
+      # /var/lib/shared-agents-memory/ (see docs/runtime.md).
+      - ./data:/app/data
+    healthcheck:
+      # /healthz lands with the HTTP transport (issue #22). Probe is parked
+      # here so the service flips to healthy as soon as that endpoint exists.
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "require('http').get('http://127.0.0.1:8080/healthz', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  qdrant_storage:
+  qdrant_snapshots:
