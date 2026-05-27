@@ -21,17 +21,18 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@paralleldrive/cuid2": "^3.3.0",
     "@qdrant/js-client-rest": "^1.13.0",
-    "zod": "^3.25.0",
-    "dotenv": "^16.5.0"
+    "dotenv": "^16.5.0",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
     "@types/node": "^22.0.0",
     "eslint": "^9.0.0",
-    "@eslint/js": "^9.0.0",
-    "typescript-eslint": "^8.0.0",
-    "typescript": "^5.8.0",
     "tsx": "^4.19.0",
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.0.0",
     "vitest": "^3.2.0"
   }
 }
