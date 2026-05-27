@@ -117,7 +117,9 @@ Set all **required** values:
 
 | Variable | Description |
 |---|---|
-| `OPENROUTER_API_KEY` | Your OpenRouter API key (`https://openrouter.ai/keys`). **Managed by CD pipeline**: set the GH repo secret `OPENROUTER_API_KEY`; the deploy workflow syncs it into this file on every dispatch. You can also fill it manually for an initial bring-up. |
+| `EMBEDDINGS_API_KEY` | Embeddings provider API key (OpenAI-compatible endpoint — OpenRouter / OpenAI / vLLM / Ollama / etc.; ADR-0005). **Managed by CD pipeline**: set the GH repo secret `EMBEDDINGS_API_KEY`; the deploy workflow syncs it into this file on every dispatch. You can also fill it manually for an initial bring-up. |
+| `EMBEDDINGS_BASE_URL` (optional) | Default `https://openrouter.ai/api/v1`. Override to point at a different provider — must speak OpenAI-compatible `/embeddings`. |
+| `EMBEDDINGS_MODEL` (optional) | Default `qwen/qwen3-embedding-8b`. Must be a 4096-dim model. |
 | `HTTP_PUBLIC_ORIGIN` | Your public HTTPS origin, e.g. `https://memory.example.com`. Must match the domain in your proxy config. Used for Origin header validation (ADR-0003 §3.3). |
 | `SAM_PAT_PEPPER` | A 32-byte (64 hex char) random secret. Generate once: `openssl rand -hex 32`. **Never change after the first PAT is issued** — changing it invalidates all existing PATs. Back this up via a secrets manager, not alongside `data/`. |
 
@@ -305,7 +307,7 @@ The `deploy.yml` workflow automates image builds and deployments.
 | `VDS_HOST` | Public IP or hostname of the VDS. |
 | `VDS_USER` | SSH user (e.g. `sam` or `ubuntu`). |
 | `VDS_SSH_KEY` | Private SSH key (the full PEM content, including `-----BEGIN...-----`). |
-| `OPENROUTER_API_KEY` | OpenRouter API key. Synced into `/etc/shared-agents-memory/.env` on every deploy so the container survives reboots. Rotating it is `gh secret set OPENROUTER_API_KEY` + a deploy dispatch. |
+| `EMBEDDINGS_API_KEY` | Embeddings provider API key (OpenAI-compatible). Synced into `/etc/shared-agents-memory/.env` on every deploy so the container survives reboots. Rotating it is `gh secret set EMBEDDINGS_API_KEY` + a deploy dispatch. |
 
 Set them with:
 
@@ -313,7 +315,7 @@ Set them with:
 gh secret set VDS_HOST           --body "your.vds.ip.or.hostname"
 gh secret set VDS_USER           --body "sam"
 gh secret set VDS_SSH_KEY        < ~/.ssh/your_deploy_key
-gh secret set OPENROUTER_API_KEY --body "sk-or-v1-..."
+gh secret set EMBEDDINGS_API_KEY --body "sk-or-v1-..."   # OpenRouter, OpenAI, etc.
 ```
 
 ### Adding the deploy key to the server
