@@ -224,10 +224,14 @@ fi
 
 # --------------------------------------------------------------------------- 6. Environment file
 log "Step 6: Drop placeholder /etc/shared-agents-memory/.env"
+# The embeddings provider key in the .env heredoc below is EMBEDDINGS_API_KEY
+# (not provider-specific). Default URL/model target OpenRouter+qwen per
+# ADR-0005, but any OpenAI-compatible endpoint works (override via
+# EMBEDDINGS_BASE_URL / EMBEDDINGS_MODEL).
 
 mkdir -p /etc/shared-agents-memory
 # root:sam 0770 — the CD pipeline writes a tmp file alongside .env when
-# rotating OPENROUTER_API_KEY (atomic awk-replace + mv) and needs group-write
+# rotating EMBEDDINGS_API_KEY (atomic awk-replace + mv) and needs group-write
 # on the directory. Idempotent: re-chown/-chmod on every setup run.
 chown root:sam /etc/shared-agents-memory
 chmod 0770 /etc/shared-agents-memory
@@ -244,12 +248,15 @@ else
 #   set -a && source /etc/shared-agents-memory/.env && set +a
 
 # ------------------------------------------------------------------ REQUIRED
-# Your OpenRouter API key (https://openrouter.ai/keys).
-# *** Managed by the CD pipeline ***: set the GitHub secret OPENROUTER_API_KEY
+# Embeddings provider API key (OpenAI-compatible endpoint).
+# Works with OpenRouter, OpenAI, vLLM, Together, Anyscale, Ollama, etc.
+# Default URL/model target OpenRouter+qwen3 per ADR-0005; change
+# EMBEDDINGS_BASE_URL and EMBEDDINGS_MODEL below for a different provider.
+# *** Managed by the CD pipeline ***: set the GitHub secret EMBEDDINGS_API_KEY
 # and dispatch deploy.yml. The workflow syncs this line on every deploy so the
 # container survives reboots. You can also fill it manually for an initial
 # bring-up before the first CD run.
-OPENROUTER_API_KEY=
+EMBEDDINGS_API_KEY=
 
 # The public HTTPS origin of your deployment — MUST match the domain in your
 # nginx/Caddy config. Used for Origin header validation (ADR-0003 §3.3).
@@ -273,14 +280,15 @@ SAM_PAT_PEPPER=
 # Host path for the mcp data volume (default: /var/lib/shared-agents-memory/data).
 # SAM_DATA_DIR=/var/lib/shared-agents-memory/data
 
-# OpenRouter model override (default: qwen/qwen3-embedding-8b).
-# OPENROUTER_MODEL=qwen/qwen3-embedding-8b
+# Embeddings model + base URL override (default: OpenRouter + qwen/qwen3-embedding-8b).
+# EMBEDDINGS_BASE_URL=https://openrouter.ai/api/v1
+# EMBEDDINGS_MODEL=qwen/qwen3-embedding-8b
 
 # Qdrant collection name override (default: agent_memories).
 # QDRANT_COLLECTION=agent_memories
 ENVEOF
 
-    # sam:sam 0600 — the CD pipeline awk-replaces OPENROUTER_API_KEY in place
+    # sam:sam 0600 — the CD pipeline awk-replaces EMBEDDINGS_API_KEY in place
     # and runs as sam over SSH, so sam must own + write the file. root can
     # still read everything anyway.
     chown sam:sam "$ENV_FILE"
@@ -315,7 +323,7 @@ cat <<'EOF'
 
 1. FILL IN /etc/shared-agents-memory/.env
    Open the file and set ALL required values:
-     - OPENROUTER_API_KEY
+     - EMBEDDINGS_API_KEY
      - HTTP_PUBLIC_ORIGIN  (e.g. https://memory.example.com)
      - SAM_PAT_PEPPER      (generate: openssl rand -hex 32)
 

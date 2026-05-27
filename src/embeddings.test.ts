@@ -15,9 +15,9 @@ import type { Config } from './config.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeConfig(overrides: Partial<Config['openRouter']> = {}): Config {
+function makeConfig(overrides: Partial<Config['embeddings']> = {}): Config {
   return {
-    openRouter: {
+    embeddings: {
       apiKey: 'test-key-secret',
       baseUrl: 'https://openrouter.test',
       model: 'qwen/qwen3-embedding-8b',
@@ -69,7 +69,7 @@ function makeNoOpMetrics(): EmbeddingMetrics & { calls: Record<string, number> }
 /** Build an EmbeddingClient with fake sleep (instant) and a controllable fetch. */
 function makeClient(
   fetchImpl: FetchImpl,
-  config?: Partial<Config['openRouter']>,
+  config?: Partial<Config['embeddings']>,
   opts?: { breakerConfig?: Parameters<typeof CircuitBreaker>[0] },
 ) {
   const sleep = vi.fn().mockResolvedValue(undefined);

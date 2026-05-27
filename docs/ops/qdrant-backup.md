@@ -503,7 +503,7 @@ systemctl list-timers sam-backup.timer
 |---|---|
 | `data/_auth/.pepper` | **ADR-0004 §3.2** — the pepper is the defence against stolen-volume replay. Backing it up alongside `pats.jsonl` would defeat the protection: an attacker who obtains both files could verify and replay any token. The pepper lives in the `SAM_PAT_PEPPER` environment variable on the host; back it up through your secrets management tool (Vault, SSM Parameter Store, an encrypted password manager), NOT in the data backup. |
 | `node_modules/`, `dist/`, build output | Recreatable from `npm install` + `npm run build`. Including them wastes storage and masks real changes. |
-| `.env`, environment files | Operator manages secrets separately. `.env` typically contains `QDRANT_API_KEY`, `OPENROUTER_API_KEY`, and `SAM_PAT_PEPPER`. Back these up through a secrets manager, not a filesystem tarball. |
+| `.env`, environment files | Operator manages secrets separately. `.env` typically contains `QDRANT_API_KEY`, `EMBEDDINGS_API_KEY`, and `SAM_PAT_PEPPER`. Back these up through a secrets manager, not a filesystem tarball. |
 
 ---
 

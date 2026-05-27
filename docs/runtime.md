@@ -11,13 +11,13 @@ The HTTP transport lands with [issue #22](https://github.com/tachkovsa/shared-ag
 
 - Docker 24+ with Compose v2 (`docker compose`, not `docker-compose`).
 - Node 20+ (only needed for the local-dev flow).
-- An OpenRouter API key.
+- An OpenAI-compatible embeddings API key (OpenRouter, OpenAI, vLLM, Together, Ollama, etc. — see ADR-0005).
 
 ## Local dev
 
 ```bash
 cp .env.example .env
-# set OPENROUTER_API_KEY in .env
+# set EMBEDDINGS_API_KEY in .env
 
 docker compose up -d qdrant       # Qdrant on 127.0.0.1:6333 (REST) and :6334 (gRPC)
 docker compose ps                 # qdrant should report `(healthy)`
@@ -45,7 +45,7 @@ internet ──HTTPS:443──► nginx/Caddy ──http://127.0.0.1:8080──�
 ```
 
 1. Provision the host: install Docker + a TLS-terminating reverse proxy (nginx or Caddy).
-2. Copy `.env.example` to `.env`. Set `OPENROUTER_API_KEY`, `QDRANT_API_KEY` (recommended), `HTTP_PUBLIC_ORIGIN=https://memory.example.com`.
+2. Copy `.env.example` to `.env`. Set `EMBEDDINGS_API_KEY`, `QDRANT_API_KEY` (recommended), `HTTP_PUBLIC_ORIGIN=https://memory.example.com`.
 3. Create a production override (`docker-compose.prod.yml`) that:
    - Removes the `qdrant.ports` publishing so Qdrant is only reachable from the docker network.
    - Pins `data/` to a backup-friendly host path (e.g. `/var/lib/shared-agents-memory/data`).
@@ -76,9 +76,9 @@ See [ADR-0003 §3.4](adr/0003-transport-stdio-and-http.md) for the rationale on 
 
 | Var | Required | Default | Notes |
 |---|---|---|---|
-| `OPENROUTER_API_KEY` | ✅ | — | Used by the embedding client. |
-| `OPENROUTER_BASE_URL` | | `https://openrouter.ai/api/v1` | Override for integration tests. |
-| `OPENROUTER_MODEL` | | `qwen/qwen3-embedding-8b` | Vector dim locked at 4096 (ADR-0005). |
+| `EMBEDDINGS_API_KEY` | ✅ | — | Embeddings provider API key (OpenAI-compatible endpoint). |
+| `EMBEDDINGS_BASE_URL` | | `https://openrouter.ai/api/v1` | Override for OpenAI / vLLM / Ollama / etc., or for integration tests against a mock. |
+| `EMBEDDINGS_MODEL` | | `qwen/qwen3-embedding-8b` | Vector dim locked at 4096 (ADR-0005). |
 | `QDRANT_URL` | | `http://localhost:6333` | Use `http://qdrant:6333` inside compose. |
 | `QDRANT_API_KEY` | | unset | MCP-side client key. Pair with `QDRANT__SERVICE__API_KEY` to enable auth. |
 | `QDRANT__SERVICE__API_KEY` | | unset | Qdrant-server side key. Must match `QDRANT_API_KEY`. **Never set to empty string** — Qdrant treats that as "auth on with empty key" and returns 401 on every request. |
@@ -101,4 +101,4 @@ Future HTTP-mode vars (`TRANSPORT`, `HTTP_BIND_HOST`, `HTTP_BIND_PORT`, `HTTP_PU
 | `qdrant` stays `unhealthy` | First-time image pull or slow disk | Wait up to ~30 s; check `docker compose logs qdrant`. |
 | `mcp` exits immediately | Tried to start `--profile http` before issue #22 ships | Don't run the `http` profile yet; use `npm run dev` instead. |
 | `npm run dev` cannot reach Qdrant | `QDRANT_URL` points at `http://qdrant:6333` | Outside compose, use `http://localhost:6333`. |
-| `EMBEDDING dimension mismatch` at boot | `OPENROUTER_MODEL` was changed to a non-4096-dim model | Drop the qdrant collection (`down -v`) or restore the 4096-dim model. |
+| `EMBEDDING dimension mismatch` at boot | `EMBEDDINGS_MODEL` was changed to a non-4096-dim model | Drop the qdrant collection (`down -v`) or restore the 4096-dim model. |

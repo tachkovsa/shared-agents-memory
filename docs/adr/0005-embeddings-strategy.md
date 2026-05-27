@@ -186,3 +186,4 @@ Alerting threshold (operator-tunable): if `rate(server_error[5m])` > 50% sustain
 |------|--------|----|
 | 2026-05-27 | Initial draft after Codex rejection of local 8B-model fallback on single VDS | Claude (architect) + Codex review |
 | 2026-05-27 | Owner sign-off on all 3 §5 questions; status Proposed → Accepted | tachkovsa |
+| 2026-05-27 | Implementation rename — env vars `OPENROUTER_API_KEY`/`OPENROUTER_BASE_URL`/`OPENROUTER_MODEL` → `EMBEDDINGS_API_KEY`/`EMBEDDINGS_BASE_URL`/`EMBEDDINGS_MODEL`. Defaults stay OpenRouter+qwen3; provider is now operator-configurable to any OpenAI-compatible endpoint (OpenAI, vLLM, Ollama, Together, etc.). Decision body unchanged; the variable-name rename does not affect the decision shape. | Claude |

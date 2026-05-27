@@ -7,14 +7,14 @@
 #   IMAGE_TAG             — image tag to deploy (default: latest)
 #   HTTP_PUBLIC_ORIGIN    — public HTTPS origin, e.g. https://memory.example.com (NO default; fail-loud)
 #   SAM_DATA_DIR          — host path for mcp data volume (default: /var/lib/shared-agents-memory/data)
-#   OPENROUTER_API_KEY    — required at runtime by src/config.ts
+#   EMBEDDINGS_API_KEY    — required at runtime by src/config.ts (OpenAI-compatible endpoint)
 #   SAM_PAT_PEPPER        — required at runtime by src/auth (32-byte hex secret)
 #
 # Optional env vars:
 #   QDRANT_API_KEY        — if set, Qdrant will require the key on every request
 #   QDRANT_COLLECTION     — collection name (default: agent_memories)
-#   OPENROUTER_BASE_URL   — default: https://openrouter.ai/api/v1
-#   OPENROUTER_MODEL      — default: qwen/qwen3-embedding-8b
+#   EMBEDDINGS_BASE_URL   — default: https://openrouter.ai/api/v1 (override for OpenAI / vLLM / Ollama / etc.)
+#   EMBEDDINGS_MODEL      — default: qwen/qwen3-embedding-8b (must be 4096-dim)
 #
 # ADR-0003 §3.4 production topology:
 #   internet --(TLS :443)--> nginx/Caddy --(loopback :8080)--> mcp --(docker net :6333)--> qdrant
