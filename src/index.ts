@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { createId } from '@paralleldrive/cuid2';
 import {
   AuthAuditWriter,
   AuthError,
@@ -8,6 +9,7 @@ import {
   loadOrInitPepper,
   PatStore,
   PEPPER_ENV_VAR,
+  registerPatTools,
   resolvePat,
   resolveSampleRate,
   runBootstrapIfNeeded,
@@ -89,6 +91,14 @@ async function main(): Promise<void> {
     sessionPat,
     auditor,
     dataDir: config.storage.dataDir,
+  });
+
+  registerPatTools(server, {
+    patStore,
+    sessionPat,
+    auditor,
+    sessionId: createId(),
+    pepper,
   });
 
   const transport = new StdioServerTransport();
