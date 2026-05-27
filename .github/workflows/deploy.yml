@@ -28,6 +28,12 @@
 #                  Store the PRIVATE key as this secret:
 #                    gh secret set VDS_SSH_KEY < ~/.ssh/sam_deploy_key
 #
+#   OPENROUTER_API_KEY — OpenRouter API key (https://openrouter.ai/keys).
+#                  Synced into /etc/shared-agents-memory/.env on every deploy so
+#                  the container picks it up across restarts. GH secret is the
+#                  source of truth; rotating it is `gh secret set OPENROUTER_API_KEY`
+#                  followed by a deploy dispatch.
+#
 # See docs/ops/vds-deploy.md §10 for the full setup guide.
 
 name: deploy
@@ -155,8 +161,10 @@ jobs:
           host:    ${{ secrets.VDS_HOST }}
           username: ${{ secrets.VDS_USER }}
           key:     ${{ secrets.VDS_SSH_KEY }}
-          # Pass variables into the remote shell via envs.
-          envs: IMAGE_TAG,DRY_RUN
+          # Pass variables into the remote shell via envs. OPENROUTER_API_KEY
+          # is synced from GH secrets into /etc/shared-agents-memory/.env so the
+          # container restart loop survives reboots without manual SSH editing.
+          envs: IMAGE_TAG,DRY_RUN,OPENROUTER_API_KEY
           script_stop: true    # abort on first non-zero exit code
           script: |
             set -euo pipefail
@@ -180,7 +188,39 @@ jobs:
             # Pull latest compose files from the repo (handles docker-compose.prod.yml updates).
             run git pull --ff-only
 
-            # Source the env file so IMAGE_TAG and HTTP_PUBLIC_ORIGIN are available.
+            # Sync OPENROUTER_API_KEY from the GH secret into the server-side
+            # .env so the container's runtime env survives restarts and reboots.
+            # awk replaces the OPENROUTER_API_KEY line in place if present; appends
+            # if missing. Atomic via tmp + mv. Other .env values (SAM_PAT_PEPPER,
+            # HTTP_PUBLIC_ORIGIN, etc.) are preserved byte-for-byte.
+            ENV_FILE=/etc/shared-agents-memory/.env
+            if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
+              echo "ERROR: OPENROUTER_API_KEY repo secret is empty." >&2
+              echo "  Set with:  gh secret set OPENROUTER_API_KEY" >&2
+              exit 1
+            fi
+            if [[ ! -f "$ENV_FILE" ]]; then
+              echo "ERROR: $ENV_FILE missing. Run deploy/setup-ubuntu.sh first." >&2
+              exit 1
+            fi
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "[dry-run] sync OPENROUTER_API_KEY into $ENV_FILE"
+            else
+              # Pass the key via awk -v so it never hits a shell expansion
+              # (defence vs special chars in the key).
+              awk -v key="$OPENROUTER_API_KEY" '
+                BEGIN { found = 0 }
+                /^OPENROUTER_API_KEY=/ { print "OPENROUTER_API_KEY=" key; found = 1; next }
+                { print }
+                END { if (!found) print "OPENROUTER_API_KEY=" key }
+              ' "$ENV_FILE" > "$ENV_FILE.tmp"
+              mv "$ENV_FILE.tmp" "$ENV_FILE"
+              chmod 0600 "$ENV_FILE"
+              echo "==> OPENROUTER_API_KEY synced into $ENV_FILE"
+            fi
+
+            # Source the env file so HTTP_PUBLIC_ORIGIN, SAM_PAT_PEPPER, and
+            # OPENROUTER_API_KEY (just-synced) are available to docker compose.
             # shellcheck source=/dev/null
             if [[ "$DRY_RUN" != "true" ]]; then
               set -a
@@ -211,6 +251,7 @@ jobs:
         env:
           IMAGE_TAG: ${{ steps.tag.outputs.tag }}
           DRY_RUN:   ${{ inputs.dry_run || 'false' }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
       - name: Wait for /healthz
         if: inputs.dry_run != true
