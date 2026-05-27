@@ -58,7 +58,7 @@ function makeConfig(
       keepaliveSec: 30,
       ...overrides,
     },
-    openRouter: {
+    embeddings: {
       apiKey: 'test-key',
       baseUrl: 'https://openrouter.ai/api/v1',
       model: 'test-model',
@@ -249,7 +249,7 @@ describe('config validation', () => {
     const savedEnv = { ...process.env };
     process.env['TRANSPORT'] = 'http';
     process.env['HTTP_PUBLIC_ORIGIN'] = '';
-    process.env['OPENROUTER_API_KEY'] = 'x';
+    process.env['EMBEDDINGS_API_KEY'] = 'x';
     try {
       expect(() => loadConfig()).toThrow('HTTP_PUBLIC_ORIGIN');
     } finally {
@@ -267,7 +267,7 @@ describe('config validation', () => {
     process.env['TRANSPORT'] = 'stdio';
     process.env['HTTP_BIND_HOST'] = '0.0.0.0';
     process.env['HTTP_PUBLIC_ORIGIN'] = '';
-    process.env['OPENROUTER_API_KEY'] = 'x';
+    process.env['EMBEDDINGS_API_KEY'] = 'x';
     try {
       loadConfig();
       const calls = stderrSpy.mock.calls.map((c) => String(c[0]));

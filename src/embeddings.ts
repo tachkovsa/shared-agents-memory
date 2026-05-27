@@ -273,10 +273,10 @@ export class EmbeddingClient {
   private readonly breaker: CircuitBreaker;
 
   constructor(config: Config, opts: EmbeddingClientOptions = {}) {
-    this.apiKey = config.openRouter.apiKey;
-    this.baseUrl = config.openRouter.baseUrl;
-    this.model = config.openRouter.model;
-    this.expectedDimension = config.openRouter.embeddingDimension;
+    this.apiKey = config.embeddings.apiKey;
+    this.baseUrl = config.embeddings.baseUrl;
+    this.model = config.embeddings.model;
+    this.expectedDimension = config.embeddings.embeddingDimension;
     this.metrics = opts.metrics ?? NO_OP_METRICS;
     this.fetchImpl = opts.fetchImpl ?? ((url, init) => fetch(url, init));
     this.now = opts.now ?? (() => Date.now());

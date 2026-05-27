@@ -387,7 +387,7 @@ All locked in [`docs/adr/`](docs/adr/) — change protocol is "supersede by new 
 ```bash
 git clone https://github.com/tachkovsa/shared-agents-memory.git
 cd shared-agents-memory
-cp .env.example .env             # fill in OPENROUTER_API_KEY
+cp .env.example .env             # fill in EMBEDDINGS_API_KEY (OpenAI-compatible provider)
 npm install
 docker compose up -d qdrant      # Qdrant on 127.0.0.1:6333
 npm run dev                      # stdio MCP server on this terminal

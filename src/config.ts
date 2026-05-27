@@ -15,7 +15,14 @@ export interface HttpTransportConfig {
 export interface Config {
   transport: TransportMode;
   http: HttpTransportConfig;
-  openRouter: {
+  /**
+   * Embeddings provider configuration. Targets the OpenAI-compatible
+   * `/embeddings` endpoint — works with OpenRouter, OpenAI proper, vLLM,
+   * Together, Anyscale, Ollama (OpenAI-compat mode), llama.cpp server, etc.
+   * Default base URL + model stay OpenRouter+qwen3 (ADR-0005); override via
+   * the `EMBEDDINGS_*` env vars.
+   */
+  embeddings: {
     apiKey: string;
     baseUrl: string;
     model: string;
@@ -109,12 +116,12 @@ export function loadConfig(): Config {
       ),
       keepaliveSec,
     },
-    openRouter: {
-      apiKey: requireEnv('OPENROUTER_API_KEY'),
+    embeddings: {
+      apiKey: requireEnv('EMBEDDINGS_API_KEY'),
       baseUrl:
-        process.env['OPENROUTER_BASE_URL'] ??
+        process.env['EMBEDDINGS_BASE_URL'] ??
         'https://openrouter.ai/api/v1',
-      model: process.env['OPENROUTER_MODEL'] ?? 'qwen/qwen3-embedding-8b',
+      model: process.env['EMBEDDINGS_MODEL'] ?? 'qwen/qwen3-embedding-8b',
       embeddingDimension: 4096,
     },
     qdrant: {
