@@ -165,10 +165,13 @@ jobs:
           # is synced from GH secrets into /etc/shared-agents-memory/.env so the
           # container restart loop survives reboots without manual SSH editing.
           envs: IMAGE_TAG,DRY_RUN,OPENROUTER_API_KEY
-          script_stop: true    # abort on first non-zero exit code
+          # script_stop intentionally NOT set: drone-ssh wraps every line
+          # with an exit-code check, which interprets `[[ ! -f X ]]` returning
+          # 1 (file exists; condition false) as a script failure. We rely on
+          # `set -eo pipefail` inside the script instead — bash knows that a
+          # conditional test in `if [[ ]]` returning non-zero is not an error.
           script: |
             set -eo pipefail
-            set -x
 
             IMAGE_TAG="${IMAGE_TAG:-latest}"
             DRY_RUN="${DRY_RUN:-false}"
@@ -261,9 +264,9 @@ jobs:
           host:    ${{ secrets.VDS_HOST }}
           username: ${{ secrets.VDS_USER }}
           key:     ${{ secrets.VDS_SSH_KEY }}
-          script_stop: true
+          # script_stop intentionally NOT set (see deploy step above).
           script: |
-            set -euo pipefail
+            set -eo pipefail
 
             echo "==> Waiting for /healthz (timeout 60s)..."
 
