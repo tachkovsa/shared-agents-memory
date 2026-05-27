@@ -31,3 +31,25 @@ export type {
   BootstrapResult,
   RunBootstrapOptions,
 } from './bootstrap.js';
+export {
+  AuthError,
+  type AuthFailureReason,
+  type RequestContext,
+} from './request-context.js';
+export {
+  resolvePat,
+  resolveRequest,
+  authorizeNamespaceAccess,
+  type ResolveRequestOptions,
+  type AuthorizeOptions,
+} from './resolve-request.js';
+export {
+  AuthAuditWriter,
+  auditPathForDataDir,
+  resolveSampleRate,
+  DEFAULT_SUCCESS_SAMPLE_RATE,
+  SAMPLE_RATE_ENV_VAR,
+  type AuthAuditEvent,
+  type AuditLine,
+  type AuditWriterOptions,
+} from './audit.js';
