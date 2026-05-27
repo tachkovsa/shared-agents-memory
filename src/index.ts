@@ -7,6 +7,7 @@ import {
 } from './auth/index.js';
 import { loadConfig } from './config.js';
 import { EmbeddingClient } from './embeddings.js';
+import { promEmbeddingMetrics } from './metrics/embeddings.js';
 import { createQdrantClient } from './qdrant.js';
 import { runHttpTransport } from './transport/http.js';
 import { runStdioTransport } from './transport/stdio.js';
@@ -36,7 +37,7 @@ async function main(): Promise<void> {
   }
 
   const qdrant = createQdrantClient(config);
-  const embeddings = new EmbeddingClient(config);
+  const embeddings = new EmbeddingClient(config, { metrics: promEmbeddingMetrics });
 
   if (config.transport === 'http') {
     await runHttpTransport({ config, patStore, pepper, qdrant, embeddings });
