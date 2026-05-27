@@ -4,6 +4,13 @@ export {
   createNamespaceSkeleton,
   loadMembers,
   loadNamespace,
+  listNamespaceIds,
   namespaceDir,
+  pruneOrphanedMembers,
+  saveMembers,
+  saveNamespace,
+  softDeleteNamespace,
+  NamespaceExistsError,
+  NamespaceNotFoundError,
 } from './store.js';
 export type { CreateNamespaceSpec } from './store.js';
