@@ -224,6 +224,10 @@ else
 
 # ------------------------------------------------------------------ REQUIRED
 # Your OpenRouter API key (https://openrouter.ai/keys).
+# *** Managed by the CD pipeline ***: set the GitHub secret OPENROUTER_API_KEY
+# and dispatch deploy.yml. The workflow syncs this line on every deploy so the
+# container survives reboots. You can also fill it manually for an initial
+# bring-up before the first CD run.
 OPENROUTER_API_KEY=
 
 # The public HTTPS origin of your deployment — MUST match the domain in your
