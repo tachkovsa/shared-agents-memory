@@ -1,7 +1,7 @@
 # ADR-0002: Namespace as tenancy boundary
 
-**Status:** Proposed
-**Date:** 2026-05-27
+**Status:** Accepted
+**Date:** 2026-05-27 (signed off 2026-05-27)
 **Authors:** Claude (architect pass, opus tier), Codex review pass
 **Related issues:** #5 (amend), #7 (amend)
 **Depends on:** ADR-0001 (memory architecture sets the surfaces this ADR scopes)
@@ -210,9 +210,14 @@ Codex's review explicitly flagged "Qdrant collections have fixed vector config a
 | Q3 | When a member's `agent_id` is deleted (ADR-0004 PAT revocation), do we auto-remove their `_members.json` entries across all namespaces? | Yes — orphaned membership entries are pruned on the next admin tool call. A passive prune (cron) is also acceptable; pick whichever is cheaper to implement. |
 | Q4 | Audit retention — how long do we keep `data/namespaces/<id>/audit/*.jsonl`? | 365 days for `audit/*` lines; configurable per namespace. Audit is append-only (no rotation deletes within the window); after 365 days, rotate out via the backup runbook (issue #10). |
 
----
+### 5.1 Owner sign-off (2026-05-27)
 
-## 6. Consequences
+| # | Decision | Notes |
+|---|----------|-------|
+| Q1 | Per-namespace quotas | Per author recommendation. Per-owner aggregation deferred. |
+| Q2 | Env override at boot + per-namespace `namespace.update_quota` | Per author recommendation. Env knobs: `DEFAULT_NS_DAILY_EMBEDDING_TOKENS`, `DEFAULT_NS_DAILY_WRITES`, `DEFAULT_NS_DAILY_SEARCHES`, `DEFAULT_NS_MAX_MEMORIES`. |
+| Q3 | Auto-prune orphaned `_members.json` entries | Per author recommendation. Implementer picks active-on-admin-call vs passive cron, whichever is cheaper. |
+| Q4 | **90 days** per-namespace audit retention (overrides recommendation of 365 days) | Owner override: 90 days is the default; configurable per namespace via `audit_retention_days` (range 30–365). Note: `data/_auth/audit.jsonl` (cross-namespace auth audit) stays at 365 days per ADR-0004 §3.8 — different log, different scope. Env knob: `DEFAULT_NS_AUDIT_RETENTION_DAYS=90`. |
 
 ### 6.1 New issues to file
 
@@ -246,3 +251,4 @@ Codex's review explicitly flagged "Qdrant collections have fixed vector config a
 | Date | Change | By |
 |------|--------|----|
 | 2026-05-27 | Initial draft | Claude (architect) |
+| 2026-05-27 | Owner sign-off on all 4 §5 questions (Q4 overrides recommendation: 90d audit retention, not 365d); status Proposed → Accepted | tachkovsa |

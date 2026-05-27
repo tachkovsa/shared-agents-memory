@@ -1,7 +1,7 @@
 # ADR-0005: Embeddings — OpenRouter primary, no local fallback in v1
 
-**Status:** Proposed
-**Date:** 2026-05-27
+**Status:** Accepted
+**Date:** 2026-05-27 (signed off 2026-05-27)
 **Authors:** Claude (architect pass), Codex review pass (rejected local 8B-model fallback on single VDS as unrealistic)
 **Related issues:** #3 (amend), #4 (amend)
 **Depends on:** ADR-0002 (per-namespace quotas drive cost containment)
@@ -151,9 +151,13 @@ Alerting threshold (operator-tunable): if `rate(server_error[5m])` > 50% sustain
 | Q2 | Should the OpenRouter `base_url` be env-tunable (§ scaffold `OPENROUTER_BASE_URL`) for testing against a fake server? | Yes — keep the scaffold's env override. Used in integration tests. |
 | Q3 | At what failure rate does the service refuse new writes (return `EMBEDDING_PROVIDER_DEGRADED` instead of retrying)? | 50% rate of `server_error` over 60 s window → 30 s circuit breaker. Recovers automatically on a successful probe. Knob: `EMBEDDING_BREAKER_THRESHOLD` (default 0.5), `EMBEDDING_BREAKER_WINDOW_MS` (default 60000), `EMBEDDING_BREAKER_COOLDOWN_MS` (default 30000). |
 
----
+### 5.1 Owner sign-off (2026-05-27)
 
-## 6. Consequences
+| # | Decision | Notes |
+|---|----------|-------|
+| Q1 | 3 retries with exponential backoff (~30 s ceiling) | Per author recommendation. |
+| Q2 | `OPENROUTER_BASE_URL` env override retained | Per author recommendation. Needed for integration tests against a mock server. |
+| Q3 | Circuit breaker at 50% failures over 60 s → 30 s cooldown | Per author recommendation. Env knobs `EMBEDDING_BREAKER_THRESHOLD`/`WINDOW_MS`/`COOLDOWN_MS` ship with defaults 0.5 / 60000 / 30000. |
 
 ### 6.1 Existing issues to amend (no new issues from this ADR)
 
@@ -181,3 +185,4 @@ Alerting threshold (operator-tunable): if `rate(server_error[5m])` > 50% sustain
 | Date | Change | By |
 |------|--------|----|
 | 2026-05-27 | Initial draft after Codex rejection of local 8B-model fallback on single VDS | Claude (architect) + Codex review |
+| 2026-05-27 | Owner sign-off on all 3 §5 questions; status Proposed → Accepted | tachkovsa |

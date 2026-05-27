@@ -1,7 +1,7 @@
 # ADR-0001: Hybrid memory architecture — file rules + vector episodic
 
-**Status:** Proposed
-**Date:** 2026-05-27
+**Status:** Accepted
+**Date:** 2026-05-27 (signed off 2026-05-27)
 **Authors:** Claude (architect pass, opus tier), with critical second-opinion pass by Codex (GPT-5)
 **Related issues:** #5 (amend), #6 (amend), and new issues filed in §6
 **Depends on:** none (foundational)
@@ -229,7 +229,14 @@ Steps 1–3 give atomicity. Step 4 is best-effort under a write lock per namespa
 | Q3 | Do we ship the `rules.list` / `rules.read` compatibility shim (§3.2) in v1 or wait until a client demonstrates weak Resource support? | Ship in v1. The cost is ~30 LOC; the benefit is no integration is blocked by a client's resource UX gap. |
 | Q4 | `applies_to[]` is currently free-form strings (e.g. `"agent:claude-code"`, `"repo:tachkovsa/*"`). Should the service interpret these (filter `resources/list` based on the requesting agent identity) or just pass them through as metadata? | Pass through as metadata in v1. Filtering by `applies_to` is policy that lives client-side; the service emits, the client decides. v2 can move filtering server-side once the patterns settle. |
 
-Owner signs off by replying inline with the chosen option for each Q. Once all four are resolved, status moves to Accepted.
+### 5.1 Owner sign-off (2026-05-27)
+
+| # | Decision | Notes |
+|---|----------|-------|
+| Q1 | Default `severity = hard` | Per author recommendation. |
+| Q2 | Per-namespace write lock | Per author recommendation. |
+| Q3 | Ship `rules.list` / `rules.read` compat shim in v1 | Per author recommendation. |
+| Q4 | Pass `applies_to[]` through as metadata in v1 | Per author recommendation. Server-side filtering revisited in v2 once patterns settle. |
 
 ---
 
@@ -268,3 +275,4 @@ Owner signs off by replying inline with the chosen option for each Q. Once all f
 | Date | Change | By |
 |------|--------|----|
 | 2026-05-27 | Initial draft after Codex second-opinion review (rules → Resources, not Tools) | Claude (architect) + Codex review |
+| 2026-05-27 | Owner sign-off on all 4 §5 questions; status Proposed → Accepted | tachkovsa |

@@ -1,7 +1,7 @@
 # ADR-0004: Auth — PAT in v1, OAuth/DCR deferred
 
-**Status:** Proposed
-**Date:** 2026-05-27
+**Status:** Accepted
+**Date:** 2026-05-27 (signed off 2026-05-27)
 **Authors:** Claude (architect pass), Codex review pass (split out OAuth/DCR per "overkill for v1 with 3-5 known agents")
 **Related issues:** #7 (replaces scope), and new issues in §6
 **Depends on:** ADR-0002 (namespace tenancy), ADR-0003 (transport)
@@ -129,19 +129,28 @@ The `token_prefix` is the lookup key. It's deterministic (same secret → same p
 On first boot (when `data/_auth/pats.jsonl` does not exist):
 
 1. Generate a `service:admin` PAT.
-2. Write it to `pats.jsonl` (hashed) and print it ONCE to stderr with a clearly-marked banner:
+2. Write it to `pats.jsonl` (hashed).
+3. Print the plaintext token ONCE to stderr with a clearly-marked banner:
    ```
    ===============================================================
    FIRST-BOOT BOOTSTRAP TOKEN — SAVE THIS, IT WILL NOT BE SHOWN AGAIN
 
        sam_pat_<27 chars>
 
-   Save it now. The server will refuse to print it on later boots.
+   Also written to: data/_auth/.bootstrap_token (mode 0600).
+   DELETE THAT FILE AS SOON AS YOU HAVE COPIED THE TOKEN.
+   The server will refuse to print it on later boots.
    ===============================================================
    ```
-3. Write a marker file `data/_auth/.bootstrap_done` to suppress the banner on later boots.
+4. **Also** write the plaintext token to `data/_auth/.bootstrap_token` (mode 0600, owner-only readable). Belt-and-suspenders fallback for operators who missed the stderr banner — see §5.1 Q1 sign-off override.
+5. Write a marker file `data/_auth/.bootstrap_done` to suppress the banner AND to refuse to regenerate the bootstrap token on later boots.
 
-The owner saves this token, configures their first agent client with it, then immediately mints scoped-down PATs for each agent identity via `pat.create` and discards the bootstrap token (revoke + secure delete).
+The owner saves this token, configures their first agent client with it, then immediately:
+- Deletes `data/_auth/.bootstrap_token` (the file in step 4).
+- Mints scoped-down PATs for each agent identity via `pat.create`.
+- Revokes the bootstrap token (`pat.revoke`) so even a leaked copy from step 4 is useless.
+
+**Operator runbook MUST flag the lingering bootstrap-token file as a hygiene risk on every subsequent boot** if `data/_auth/.bootstrap_token` still exists when `.bootstrap_done` is set. Stderr warning per boot: `WARNING: data/_auth/.bootstrap_token still exists; delete it after copying the secret.`
 
 ### 3.5 PAT lifecycle tools (admin-only)
 
@@ -247,9 +256,15 @@ Every auth boundary outcome emits an append-only line to `data/_auth/audit.jsonl
 | Q4 | `auth.success` audit sampling rate — 10% (§3.8) or full? | 10% in v1, env-tunable. Full sampling at 64 sessions × 60 req/min/session = 3840 lines/min — that's noise. `auth.failure` is full-rate because rare and important. |
 | Q5 | Where do we draw the line between `namespace:admin` (manage one namespace) and `service:admin` (server-wide)? Is `namespace.create` `namespace:admin` or `service:admin`? | `service:admin` for `namespace.create` and `namespace.delete`; `namespace:admin` for everything inside an existing namespace. Creating namespaces is a server-shape change; deleting is destructive cross-cutting. |
 
----
+### 5.1 Owner sign-off (2026-05-27)
 
-## 6. Consequences
+| # | Decision | Notes |
+|---|----------|-------|
+| Q1 | **Bootstrap token: stderr banner + one-shot marker file** (extends recommendation of stderr-only) | Owner override: belt-and-suspenders. Token is printed to stderr AND written to `data/_auth/.bootstrap_token` (mode 0600). Operator must delete the file after copying. Subsequent boots emit a hygiene warning if the file still exists. §3.4 updated to reflect the dual-output flow and the runbook requirement. |
+| Q2 | `expires_at` optional with default 365 days at mint | Per author recommendation. |
+| Q3 | `pat.rotate` shipped in v1 | Per author recommendation. |
+| Q4 | `auth.success` audit sampling 10%, env-tunable | Per author recommendation. `auth.failure` stays full-rate. Env knob: `AUDIT_SUCCESS_SAMPLE_RATE` (default 0.1, range 0.0–1.0). |
+| Q5 | `service:admin` for `namespace.create` / `namespace.delete`; `namespace:admin` for in-namespace operations | Per author recommendation. |
 
 ### 6.1 New issues to file
 
@@ -270,7 +285,7 @@ Every auth boundary outcome emits an append-only line to `data/_auth/audit.jsonl
 - `src/auth/pepper.ts` (new) — load `.pepper` file + env var, cross-check at boot.
 - `src/tools.ts` — add `pat.*` tool registrations. Replace the empty `agent_id: ''` (`src/tools.ts:55`) with the resolved agent identity from `RequestContext`.
 - `.env.example` — add `SERVER_PEPPER=` (commented "auto-generated on first boot, mirror from data/_auth/.pepper") and `LOCAL_STDIO_AGENT_PAT=` (only for `TRANSPORT=stdio`).
-- `.gitignore` — explicitly ignore `data/_auth/.pepper` and `data/_auth/pats.jsonl`.
+- `.gitignore` — explicitly ignore `data/_auth/.pepper`, `data/_auth/pats.jsonl`, `data/_auth/.bootstrap_token`, `data/_auth/.bootstrap_done`.
 
 ### 6.4 Future ADRs unlocked by this one
 
@@ -284,3 +299,4 @@ Every auth boundary outcome emits an append-only line to `data/_auth/audit.jsonl
 | Date | Change | By |
 |------|--------|----|
 | 2026-05-27 | Initial draft after Codex split feedback (PAT v1, DCR deferred; HMAC+pepper not bare SHA-256) | Claude (architect) + Codex review |
+| 2026-05-27 | Owner sign-off on all 5 §5 questions (Q1 extends recommendation: bootstrap token written to both stderr AND a one-shot file); §3.4 and §6.3 updated; status Proposed → Accepted | tachkovsa |

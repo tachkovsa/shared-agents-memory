@@ -1,7 +1,7 @@
 # ADR-0003: Transport — stdio for local dev, streamable HTTP for shared
 
-**Status:** Proposed
-**Date:** 2026-05-27
+**Status:** Accepted
+**Date:** 2026-05-27 (signed off 2026-05-27)
 **Authors:** Claude (architect pass), Codex review pass (this ADR is a Codex catch — scaffold is stdio, but auth is HTTP)
 **Related issues:** #2 (amend), #6 (amend), #8 (amend)
 **Depends on:** ADR-0002 (defines what "shared" means — multi-namespace, authenticated)
@@ -95,7 +95,7 @@ Picking one without thinking through the cascade leads to "we have a server but 
 - **Session correlation.** Server issues `Mcp-Session-Id` at MCP `initialize`. Subsequent requests carry it. Session expires after **15 minutes idle** (env-tunable `MCP_HTTP_SESSION_IDLE_MIN`, default 15, min 5, max 60); a stale session returns `MCP_SESSION_EXPIRED` and forces re-handshake.
 - **Connection limits.** v1 accepts at most **64 concurrent sessions** and **8 concurrent in-flight tool calls per session**. Beyond either: HTTP 429 with `Retry-After`. Tuned for single Ubuntu VDS at small-team scale.
 - **Audit on every request boundary.** Tool calls, resource reads, and auth failures all emit audit lines per ADR-0004 § audit.
-- **Idle SSE behaviour.** The `GET /mcp` server-event stream sends a `:ping` keepalive comment every 30 s to defeat proxy idle timeouts. No correctness contract depends on its arrival order.
+- **Idle SSE behaviour.** The `GET /mcp` server-event stream sends a `:ping` keepalive comment every `MCP_HTTP_KEEPALIVE_SEC` seconds (default 30, min 5, max 300) to defeat proxy idle timeouts. No correctness contract depends on its arrival order. Owner sign-off (§5.1 Q3) made this env-tunable to accommodate aggressive corporate proxies that drop idle connections sooner.
 
 ### 3.4 Deployment shapes (cross-reference issue #8)
 
@@ -141,6 +141,7 @@ HTTP_PUBLIC_ORIGIN=https://memory.example.com   # required when TRANSPORT=http; 
 MCP_HTTP_SESSION_IDLE_MIN=15        # default 15, min 5, max 60
 MCP_HTTP_MAX_SESSIONS=64            # default 64
 MCP_HTTP_MAX_INFLIGHT_PER_SESSION=8 # default 8
+MCP_HTTP_KEEPALIVE_SEC=30           # default 30, min 5, max 300 (§3.3, sign-off Q3)
 ```
 
 `HTTP_BIND_HOST=0.0.0.0` without a reverse proxy is flagged in startup logs with a `WARNING: binding to 0.0.0.0 without HTTP_PUBLIC_ORIGIN matches it intentionally?`. The service does not refuse to start — but it makes noise. (Codex review: "fail loud, not silent.")
@@ -198,9 +199,14 @@ A degraded version of this — "stdio per laptop, but all of them point at the s
 | Q3 | Should the keepalive `:ping` interval (§3.3) be env-tunable? | No — hardcode 30 s. Tunable knobs without a use case become operational footguns. |
 | Q4 | Do we support running the server with `TRANSPORT=http` outside Docker (bare-metal `node dist/index.js` behind nginx)? | Yes — Docker is the recommended path (issue #8), but the binary itself has no Docker dependency. Document both. |
 
----
+### 5.1 Owner sign-off (2026-05-27)
 
-## 6. Consequences
+| # | Decision | Notes |
+|---|----------|-------|
+| Q1 | `MCP_HTTP_MAX_SESSIONS=64` default | Per author recommendation. Revisit in v1.1 with telemetry. |
+| Q2 | stdio audit lines written both to disk and stderr | Per author recommendation. Preserves auditability invariant in stdio mode. |
+| Q3 | **Keepalive ping env-tunable** (overrides recommendation of hardcoded 30 s) | Owner override: `MCP_HTTP_KEEPALIVE_SEC` env knob (default 30, min 5, max 300). Reason: anticipated need to tune for aggressive corporate proxies. §3.3 and §3.5 updated. |
+| Q4 | `TRANSPORT=http` supported outside Docker (bare-metal behind nginx) | Per author recommendation. Operator runbook documents both paths. |
 
 ### 6.1 New issues to file
 
@@ -236,3 +242,4 @@ A degraded version of this — "stdio per laptop, but all of them point at the s
 | Date | Change | By |
 |------|--------|----|
 | 2026-05-27 | Initial draft — created in response to Codex review (scaffold ships stdio but auth/Bearer is HTTP) | Claude (architect) + Codex review |
+| 2026-05-27 | Owner sign-off on all 4 §5 questions (Q3 overrides recommendation: keepalive interval env-tunable, not hardcoded); §3.3 and §3.5 updated; status Proposed → Accepted | tachkovsa |

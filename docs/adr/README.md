@@ -10,12 +10,12 @@ An Architecture Decision Record (ADR) captures a single significant architectura
 
 | # | Title | Status |
 |---|-------|--------|
-| [0001](0001-hybrid-memory-architecture.md) | Hybrid memory architecture: file rules + vector episodic | Proposed |
-| [0002](0002-namespace-tenancy-model.md) | Namespace as tenancy boundary | Proposed |
-| [0003](0003-transport-stdio-and-http.md) | Transport: stdio for local, streamable HTTP for shared | Proposed |
-| [0004](0004-auth-pat-v1.md) | Auth: PAT in v1, OAuth/DCR deferred | Proposed |
-| [0005](0005-embeddings-strategy.md) | Embeddings: OpenRouter primary, no local fallback in v1 | Proposed |
-| [0006](0006-memory-lifecycle.md) | Memory lifecycle: dedup, reinforcement, per-namespace decay | Proposed |
+| [0001](0001-hybrid-memory-architecture.md) | Hybrid memory architecture: file rules + vector episodic | Accepted |
+| [0002](0002-namespace-tenancy-model.md) | Namespace as tenancy boundary | Accepted |
+| [0003](0003-transport-stdio-and-http.md) | Transport: stdio for local, streamable HTTP for shared | Accepted |
+| [0004](0004-auth-pat-v1.md) | Auth: PAT in v1, OAuth/DCR deferred | Accepted |
+| [0005](0005-embeddings-strategy.md) | Embeddings: OpenRouter primary, no local fallback in v1 | Accepted |
+| [0006](0006-memory-lifecycle.md) | Memory lifecycle: dedup, reinforcement, per-namespace decay | Accepted |
 
 ## Status values
 

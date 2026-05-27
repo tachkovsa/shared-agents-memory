@@ -1,7 +1,7 @@
 # ADR-0006: Memory lifecycle — dedup, reinforcement, per-namespace decay
 
-**Status:** Proposed
-**Date:** 2026-05-27
+**Status:** Accepted
+**Date:** 2026-05-27 (signed off 2026-05-27)
 **Authors:** Claude (architect pass), Codex review pass (rejected aggressive default decay; decay must lower ranking before delete)
 **Related issues:** #5 (amend), and new issues in §6
 **Depends on:** ADR-0001 (this concerns episodic memory only, not rules), ADR-0002 (per-namespace policy)
@@ -257,9 +257,14 @@ Tuned via `namespace.update` (requires `namespace:admin`). All values have safe 
 | Q3 | Staleness audit — opt-in or opt-out by default? | Opt-IN per namespace AND opt-in per memory (the writer sets `verifies_against`). The cron sweep is enabled-by-default but does nothing for memories without `verifies_against`. Cost-of-being-on is near-zero. |
 | Q4 | `memory.restore` (undelete) — admin-only or any namespace member? | Any namespace member with `memory:write`. Restoration is not destructive. The 30-day grace window is the safety net; making restoration admin-gated adds friction without security benefit. |
 
----
+### 5.1 Owner sign-off (2026-05-27)
 
-## 6. Consequences
+| # | Decision | Notes |
+|---|----------|-------|
+| Q1 | Default `RetentionPolicy = { mode: "keep-forever" }` | Per author recommendation. Owner picks decay consciously per namespace. |
+| Q2 | Dedup merge writes to `metadata.dedup_history` only; body merging opt-in (`merge_into_body: true` per namespace) | Per author recommendation. Avoids embedding drift on accumulating bodies. |
+| Q3 | Staleness audit: opt-IN per namespace AND opt-in per memory (writer sets `verifies_against`); cron sweep enabled by default but no-op without `verifies_against` | Per author recommendation. Cost-of-being-on is near-zero. |
+| Q4 | `memory.restore` available to any namespace member with `memory:write` | Per author recommendation. Restoration is non-destructive; 30-day grace window is the safety net. |
 
 ### 6.1 New issues to file
 
@@ -294,3 +299,4 @@ Tuned via `namespace.update` (requires `namespace:admin`). All values have safe 
 | Date | Change | By |
 |------|--------|----|
 | 2026-05-27 | Initial draft after Codex review (default `keep-forever`; decay lowers ranking before delete; per-namespace policy) | Claude (architect) + Codex review |
+| 2026-05-27 | Owner sign-off on all 4 §5 questions; status Proposed → Accepted | tachkovsa |
