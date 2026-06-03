@@ -494,6 +494,89 @@ describe('Session lifecycle', () => {
   });
 });
 
+describe('HTTP method friendliness (/mcp preflight probes)', () => {
+  let server: TestServer;
+
+  beforeEach(async () => {
+    server = await startTestServer({ publicOrigin: 'https://memory.example.com' });
+  });
+
+  afterEach(async () => {
+    await server.stop();
+  });
+
+  it('answers OPTIONS /mcp with 204 + Allow + CORS, no auth required', async () => {
+    const res = await fetch(`${server.baseUrl}/mcp`, { method: 'OPTIONS' });
+    expect(res.status).toBe(204);
+    const allow = res.headers.get('allow') ?? '';
+    expect(allow).toContain('POST');
+    expect(allow).toContain('GET');
+    expect(allow).toContain('DELETE');
+    expect(res.headers.get('access-control-allow-methods')).toContain('POST');
+  });
+
+  it('echoes Access-Control-Allow-Origin on OPTIONS when Origin matches publicOrigin', async () => {
+    const res = await fetch(`${server.baseUrl}/mcp`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://memory.example.com' },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBe('https://memory.example.com');
+  });
+
+  it('does not reflect a foreign Origin in Access-Control-Allow-Origin', async () => {
+    const res = await fetch(`${server.baseUrl}/mcp`, {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://evil.example.com' },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('answers HEAD /mcp with 200 + Allow, no auth required', async () => {
+    const res = await fetch(`${server.baseUrl}/mcp`, { method: 'HEAD' });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('allow') ?? '').toContain('POST');
+  });
+
+  it('returns 405 with an Allow header for genuinely unsupported methods', async () => {
+    const res = await fetch(`${server.baseUrl}/mcp`, { method: 'PUT' });
+    expect(res.status).toBe(405);
+    expect(res.headers.get('allow') ?? '').toContain('GET');
+  });
+
+  it('DELETE /mcp without a session id returns a clear MCP error (not 405)', async () => {
+    const res = await httpRequest(
+      `${server.baseUrl}/mcp`,
+      'DELETE',
+      { Authorization: `Bearer ${server.patSecret}` },
+    );
+    expect(res.status).toBe(400);
+    expect((res.body as Record<string, unknown>)['error']).toBe('MCP_SESSION_REQUIRED');
+  });
+
+  it('DELETE /mcp terminates an established session', async () => {
+    const initRes = await httpRequest(
+      `${server.baseUrl}/mcp`,
+      'POST',
+      { Authorization: `Bearer ${server.patSecret}` },
+      mcpInitializeBody(),
+    );
+    const sessionId = initRes.headers['mcp-session-id'];
+    expect(sessionId).toBeTruthy();
+
+    const delRes = await fetch(`${server.baseUrl}/mcp`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${server.patSecret}`,
+        'Mcp-Session-Id': sessionId!,
+      },
+    });
+    // SDK responds 200 on a successful session teardown.
+    expect(delRes.status).toBeLessThan(300);
+  });
+});
+
 describe('Concurrency limits', () => {
   it('returns 429 when max sessions are exceeded', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'sam-http-conc-'));

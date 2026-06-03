@@ -119,6 +119,49 @@ function sendJson(
   res.end(payload);
 }
 
+/**
+ * Methods the MCP Streamable HTTP endpoint accepts.
+ *
+ * POST   — JSON-RPC request/response (initialize, tools/list, tools/call …)
+ * GET    — open the server→client SSE stream for an existing session
+ * DELETE — terminate a session (MCP spec §Streamable HTTP; handled by the SDK)
+ * HEAD   — liveness/capability probe (answered without auth)
+ * OPTIONS — CORS preflight / capability probe (answered without auth)
+ *
+ * Advertised via the `Allow` header on 405 responses and on HEAD/OPTIONS so
+ * clients that probe the endpoint before the handshake (e.g. the Codex CLI,
+ * `codex doctor`, browsers) don't see a bare 405 and give up. RFC 9110 §10.2.1
+ * requires the `Allow` header on every 405.
+ */
+const MCP_ALLOWED_METHODS = 'GET, POST, DELETE, HEAD, OPTIONS';
+
+/**
+ * Applies CORS headers to a /mcp response. The `Access-Control-Allow-Origin`
+ * value is only echoed when the request Origin matches the configured public
+ * origin — we never reflect an arbitrary Origin, preserving the anti-DNS-
+ * rebinding guarantee from issue #23. Non-browser clients (Codex, Claude Code)
+ * send no Origin and are unaffected; these headers exist purely so browser-based
+ * MCP clients can complete a preflight.
+ */
+function applyMcpCorsHeaders(
+  res: ServerResponse,
+  requestOrigin: string | undefined,
+  publicOrigin: string | undefined,
+): void {
+  if (requestOrigin && publicOrigin && requestOrigin === publicOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', publicOrigin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Methods', MCP_ALLOWED_METHODS);
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Authorization, Content-Type, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID',
+  );
+  res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
+  res.setHeader('Access-Control-Max-Age', '600');
+}
+
 // ── Session factory ───────────────────────────────────────────────────────────
 
 /**
@@ -353,13 +396,37 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
     }
 
     const method = req.method?.toUpperCase();
-    if (method !== 'POST' && method !== 'GET') {
+    const origin = req.headers['origin'];
+
+    // ── OPTIONS — CORS preflight / capability probe (no auth) ─────────────────
+    // Browsers preflight before the MCP handshake; some MCP clients (and
+    // `codex doctor`) probe the endpoint before sending `initialize`. Answer
+    // with the allowed methods so they never see a bare 405.
+    if (method === 'OPTIONS') {
+      applyMcpCorsHeaders(res, origin, http.publicOrigin);
+      res.writeHead(204, { 'Allow': MCP_ALLOWED_METHODS });
+      res.end();
+      return;
+    }
+
+    // ── HEAD — liveness/capability probe (no auth, no body) ───────────────────
+    // Advertises that /mcp exists and which methods it accepts. Without this a
+    // HEAD probe falls through to 405 and clients like the Codex CLI treat the
+    // server as incompatible before ever attempting `initialize`.
+    if (method === 'HEAD') {
+      applyMcpCorsHeaders(res, origin, http.publicOrigin);
+      res.writeHead(200, { 'Allow': MCP_ALLOWED_METHODS, 'Content-Type': 'application/json' });
+      res.end();
+      return;
+    }
+
+    if (method !== 'POST' && method !== 'GET' && method !== 'DELETE') {
+      res.setHeader('Allow', MCP_ALLOWED_METHODS);
       sendJson(res, 405, { error: 'METHOD_NOT_ALLOWED' });
       return;
     }
 
     // ── Origin validation (issue #23) ────────────────────────────────────────
-    const origin = req.headers['origin'];
     if (origin !== undefined) {
       if (!http.publicOrigin || origin !== http.publicOrigin) {
         httpRequestsTotal.inc({ outcome: 'origin_mismatch' });
@@ -367,6 +434,10 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
         return;
       }
     }
+
+    // Echo CORS headers on the real POST/GET/DELETE responses so browser-based
+    // MCP clients can read them (no-op for header-less CLI clients).
+    applyMcpCorsHeaders(res, origin, http.publicOrigin);
 
     // ── Authorization ────────────────────────────────────────────────────────
     const authHeader = req.headers['authorization'];
@@ -429,6 +500,26 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
       rec.lastActivityAt = Date.now();
       sseClients.add(res);
       res.on('close', () => sseClients.delete(res));
+      httpRequestsTotal.inc({ outcome: '2xx' });
+      await rec.transport.handleRequest(req, res);
+      return;
+    }
+
+    // DELETE terminates a session (MCP Streamable HTTP spec). The SDK transport
+    // performs the teardown; our onsessionclosed hook then prunes the record.
+    if (method === 'DELETE') {
+      if (!sessionIdHeader) {
+        httpRequestsTotal.inc({ outcome: '4xx' });
+        sendJson(res, 400, { error: 'MCP_SESSION_REQUIRED', message: 'Mcp-Session-Id header required for DELETE' });
+        return;
+      }
+      const rec = sessions.get(sessionIdHeader);
+      if (!rec) {
+        httpRequestsTotal.inc({ outcome: 'session_expired' });
+        sendJson(res, 404, { error: 'MCP_SESSION_EXPIRED', message: 'Session not found or expired' });
+        return;
+      }
+      rec.lastActivityAt = Date.now();
       httpRequestsTotal.inc({ outcome: '2xx' });
       await rec.transport.handleRequest(req, res);
       return;
