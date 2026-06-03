@@ -45,6 +45,7 @@ import { makeOrphanPruneCallback, registerNamespaceTools } from '../namespaces/t
 import { listNamespaceIds } from '../namespaces/store.js';
 import { initCollection } from '../qdrant.js';
 import { registerRuleTools } from '../rules/index.js';
+import { omitDefaultForbiddenToolExecution } from './codex-compat.js';
 
 // ── Error types ──────────────────────────────────────────────────────────────
 
@@ -230,6 +231,8 @@ function createSession(
     auditor,
     dataDir: config.storage.dataDir,
   });
+
+  omitDefaultForbiddenToolExecution(server);
 
   // Connect is async but we fire it without awaiting — the transport.handleRequest
   // call for the initialize request will queue correctly because the SDK transport

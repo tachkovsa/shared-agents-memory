@@ -491,6 +491,9 @@ describe('Session lifecycle', () => {
     expect(listRes.status).toBe(200);
     const body = listRes.body as Record<string, unknown>;
     expect(body['jsonrpc']).toBe('2.0');
+    const tools = ((body['result'] as Record<string, unknown>)['tools'] as Record<string, unknown>[]);
+    expect(tools.length).toBeGreaterThan(0);
+    expect(tools.every((tool) => !('execution' in tool))).toBe(true);
   });
 });
 
