@@ -208,7 +208,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
   }
 
   server.tool(
-    'pat.create',
+    'pat_create',
     'Mint a new PAT for an agent identity. Two-call confirmation ceremony (ADR-0004 §3.5).',
     {
       display_name: z.string().min(1).describe('Human-readable label, e.g. "Codex CLI on laptop"'),
@@ -228,7 +228,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
         .describe('Pass the token from the pending envelope to actually mint.'),
     },
     async (input) => {
-      const adminErr = await requireServiceAdmin('pat.create');
+      const adminErr = await requireServiceAdmin('pat_create');
       if (adminErr) return authErrorResponse(adminErr);
 
       const expiresInDays =
@@ -248,7 +248,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
 
       if (!input.confirmation_token) {
         return buildPending(
-          'pat.create',
+          'pat_create',
           inputForHash,
           `Mint a PAT for agent "${input.agent_identity}" (${input.display_name}).`,
           {
@@ -261,7 +261,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
         );
       }
 
-      const verified = verifyAndConsume('pat.create', input.confirmation_token, inputForHash);
+      const verified = verifyAndConsume('pat_create', input.confirmation_token, inputForHash);
       if (!verified.ok) return verified.response;
 
       const minted = await patStore.mint({
@@ -272,7 +272,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
         created_by: sessionPat.agent_identity,
         expires_at: willExpireAt,
       });
-      await recordAuthSuccess('pat.create', 'service:admin');
+      await recordAuthSuccess('pat_create', 'service:admin');
       await auditor.record('pat.minted', {
         pat_id: minted.pat.id,
         agent_identity: minted.pat.agent_identity,
@@ -295,7 +295,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
   );
 
   server.tool(
-    'pat.list',
+    'pat_list',
     'List PATs visible to the caller. Non-admins see only their own.',
     {
       agent_identity: z
@@ -304,7 +304,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
         .describe('Filter by agent identity. Non-admins are always restricted to their own.'),
     },
     async (input) => {
-      await recordAuthSuccess('pat.list', isServiceAdmin ? 'service:admin' : 'memory:read');
+      await recordAuthSuccess('pat_list', isServiceAdmin ? 'service:admin' : 'memory:read');
       const all = patStore.list();
       const visible = isServiceAdmin
         ? all
@@ -317,7 +317,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
   );
 
   server.tool(
-    'pat.revoke',
+    'pat_revoke',
     'Revoke a PAT. Caller must be the owning agent or hold service:admin.',
     {
       pat_id: z.string().min(1).describe('PAT id to revoke'),
@@ -336,7 +336,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
         await auditor.record('auth.failure', {
           reason: err.reason,
           token_prefix: err.tokenPrefix,
-          tool_or_resource: 'pat.revoke',
+          tool_or_resource: 'pat_revoke',
           target_pat_id: input.pat_id,
         });
         return authErrorResponse(err);
@@ -344,7 +344,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
 
       try {
         const revoked = await patStore.revoke(input.pat_id, input.reason);
-        await recordAuthSuccess('pat.revoke', isServiceAdmin ? 'service:admin' : 'memory:read');
+        await recordAuthSuccess('pat_revoke', isServiceAdmin ? 'service:admin' : 'memory:read');
         await auditor.record('pat.revoked', {
           pat_id: revoked.id,
           reason: revoked.revoked_reason,
@@ -369,7 +369,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
   );
 
   server.tool(
-    'pat.rotate',
+    'pat_rotate',
     'Rotate a PAT: mint new with same scopes, revoke old, atomically. Two-call confirmation (ADR-0004 §3.5).',
     {
       pat_id: z.string().min(1).describe('PAT id to rotate'),
@@ -391,7 +391,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
         await auditor.record('auth.failure', {
           reason: err.reason,
           token_prefix: err.tokenPrefix,
-          tool_or_resource: 'pat.rotate',
+          tool_or_resource: 'pat_rotate',
           target_pat_id: input.pat_id,
         });
         return authErrorResponse(err);
@@ -408,7 +408,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
 
       if (!input.confirmation_token) {
         return buildPending(
-          'pat.rotate',
+          'pat_rotate',
           inputForHash,
           `Rotate PAT ${target.id} (${target.display_name}). The old token will be revoked.`,
           {
@@ -421,7 +421,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
         );
       }
 
-      const verified = verifyAndConsume('pat.rotate', input.confirmation_token, inputForHash);
+      const verified = verifyAndConsume('pat_rotate', input.confirmation_token, inputForHash);
       if (!verified.ok) return verified.response;
 
       try {
@@ -433,7 +433,7 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
           created_by: sessionPat.agent_identity,
           expires_at: target.expires_at,
         });
-        await recordAuthSuccess('pat.rotate', isServiceAdmin ? 'service:admin' : 'memory:read');
+        await recordAuthSuccess('pat_rotate', isServiceAdmin ? 'service:admin' : 'memory:read');
         await auditor.record('pat.minted', {
           pat_id: minted.pat.id,
           agent_identity: minted.pat.agent_identity,

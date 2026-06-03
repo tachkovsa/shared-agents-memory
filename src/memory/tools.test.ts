@@ -127,24 +127,24 @@ function parsePayload(result: { content: { type: string; text?: string }[] }) {
   return JSON.parse(text);
 }
 
-describe('memory.store', () => {
+describe('memory_store', () => {
   it('registers under noun.verb name and stores under the authorized namespace', async () => {
     const { client, fake } = await setupHarness();
     const tools = await client.listTools();
     const names = tools.tools.map((t) => t.name);
     expect(names).toEqual(
       expect.arrayContaining([
-        'memory.store',
-        'memory.search',
-        'memory.get',
-        'memory.update_metadata',
-        'memory.delete',
+        'memory_store',
+        'memory_search',
+        'memory_get',
+        'memory_update_metadata',
+        'memory_delete',
       ]),
     );
 
     const body = parsePayload(
       (await client.callTool({
-        name: 'memory.store',
+        name: 'memory_store',
         arguments: {
           namespace: 'personal',
           content: 'hello world',
@@ -165,7 +165,7 @@ describe('memory.store', () => {
   it('returns an auth error when the caller is not a member of the namespace', async () => {
     const { client } = await setupHarness({ allowedNamespaces: ['personal'] });
     const result = (await client.callTool({
-      name: 'memory.store',
+      name: 'memory_store',
       arguments: { namespace: 'other', content: 'hi' },
     })) as { content: { text: string }[]; isError?: boolean };
     expect(result.isError).toBe(true);
@@ -175,14 +175,14 @@ describe('memory.store', () => {
   it('rejects writes when the token lacks memory:write', async () => {
     const { client } = await setupHarness({ sessionScopes: ['memory:read'] });
     const result = (await client.callTool({
-      name: 'memory.store',
+      name: 'memory_store',
       arguments: { namespace: 'personal', content: 'hi' },
     })) as { content: { text: string }[]; isError?: boolean };
     expect(result.isError).toBe(true);
   });
 });
 
-describe('memory.search', () => {
+describe('memory_search', () => {
   it('returns scored results', async () => {
     const { client } = await setupHarness({}, {
       search: vi.fn(async () => [
@@ -204,7 +204,7 @@ describe('memory.search', () => {
 
     const body = parsePayload(
       (await client.callTool({
-        name: 'memory.search',
+        name: 'memory_search',
         arguments: { namespace: 'personal', query: 'hello' },
       })) as never,
     );
@@ -214,7 +214,7 @@ describe('memory.search', () => {
   });
 });
 
-describe('memory.get', () => {
+describe('memory_get', () => {
   it('returns the memory when in-namespace', async () => {
     const { client } = await setupHarness({}, {
       retrieve: vi.fn(async () => [
@@ -235,7 +235,7 @@ describe('memory.get', () => {
 
     const body = parsePayload(
       (await client.callTool({
-        name: 'memory.get',
+        name: 'memory_get',
         arguments: {
           namespace: 'personal',
           id: '11111111-1111-1111-1111-111111111111',
@@ -248,7 +248,7 @@ describe('memory.get', () => {
   it('returns not_found for a missing id', async () => {
     const { client } = await setupHarness();
     const result = (await client.callTool({
-      name: 'memory.get',
+      name: 'memory_get',
       arguments: {
         namespace: 'personal',
         id: '11111111-1111-1111-1111-111111111111',
@@ -259,7 +259,7 @@ describe('memory.get', () => {
   });
 });
 
-describe('memory.update_metadata', () => {
+describe('memory_update_metadata', () => {
   it('updates metadata without re-embedding', async () => {
     const { client, embeddings, fake } = await setupHarness({}, {
       retrieve: vi.fn(async () => [
@@ -281,7 +281,7 @@ describe('memory.update_metadata', () => {
 
     const body = parsePayload(
       (await client.callTool({
-        name: 'memory.update_metadata',
+        name: 'memory_update_metadata',
         arguments: {
           namespace: 'personal',
           id: '11111111-1111-1111-1111-111111111111',
@@ -297,7 +297,7 @@ describe('memory.update_metadata', () => {
   });
 });
 
-describe('memory.delete', () => {
+describe('memory_delete', () => {
   it('deletes by id', async () => {
     const { client, fake } = await setupHarness({}, {
       retrieve: vi.fn(async () => [
@@ -318,7 +318,7 @@ describe('memory.delete', () => {
 
     const body = parsePayload(
       (await client.callTool({
-        name: 'memory.delete',
+        name: 'memory_delete',
         arguments: {
           namespace: 'personal',
           id: '11111111-1111-1111-1111-111111111111',
@@ -332,7 +332,7 @@ describe('memory.delete', () => {
   it('returns not_found if absent', async () => {
     const { client } = await setupHarness();
     const result = (await client.callTool({
-      name: 'memory.delete',
+      name: 'memory_delete',
       arguments: {
         namespace: 'personal',
         id: '11111111-1111-1111-1111-111111111111',

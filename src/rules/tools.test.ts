@@ -89,7 +89,7 @@ describe('rules.upsert + rules.read', () => {
     const { client } = await setupHarness();
     const upsert = parsePayload(
       (await client.callTool({
-        name: 'rules.upsert',
+        name: 'rules_upsert',
         arguments: {
           namespace: 'personal',
           id: 'no-bots',
@@ -105,7 +105,7 @@ describe('rules.upsert + rules.read', () => {
 
     const read = parsePayload(
       (await client.callTool({
-        name: 'rules.read',
+        name: 'rules_read',
         arguments: { namespace: 'personal', id: 'no-bots' },
       })) as never,
     );
@@ -117,7 +117,7 @@ describe('rules.upsert + rules.read', () => {
     const { client } = await setupHarness({ sessionScopes: ['rules:read'] });
     const body = parsePayload(
       (await client.callTool({
-        name: 'rules.upsert',
+        name: 'rules_upsert',
         arguments: {
           namespace: 'personal',
           id: 'denied',
@@ -132,7 +132,7 @@ describe('rules.upsert + rules.read', () => {
   it('rejects reads when token lacks rules:read', async () => {
     const { client } = await setupHarness({ sessionScopes: ['rules:write'] });
     await client.callTool({
-      name: 'rules.upsert',
+      name: 'rules_upsert',
       arguments: {
         namespace: 'personal',
         id: 'r-1',
@@ -142,7 +142,7 @@ describe('rules.upsert + rules.read', () => {
     });
     const read = parsePayload(
       (await client.callTool({
-        name: 'rules.read',
+        name: 'rules_read',
         arguments: { namespace: 'personal', id: 'r-1' },
       })) as never,
     );
@@ -150,21 +150,21 @@ describe('rules.upsert + rules.read', () => {
   });
 });
 
-describe('rules.list', () => {
+describe('rules_list', () => {
   it('returns rules across readable namespaces for admin', async () => {
     const { client } = await setupHarness({
       allowedNamespaces: ['personal', 'team-alpha'],
     });
     await client.callTool({
-      name: 'rules.upsert',
+      name: 'rules_upsert',
       arguments: { namespace: 'personal', id: 'a-rule', title: 'A', body: '' },
     });
     await client.callTool({
-      name: 'rules.upsert',
+      name: 'rules_upsert',
       arguments: { namespace: 'team-alpha', id: 'b-rule', title: 'B', body: '' },
     });
     const body = parsePayload(
-      (await client.callTool({ name: 'rules.list', arguments: {} })) as never,
+      (await client.callTool({ name: 'rules_list', arguments: {} })) as never,
     );
     const uris: string[] = body.rules.map((r: { uri: string }) => r.uri);
     expect(uris).toContain('mem://personal/rules/a-rule');
@@ -176,16 +176,16 @@ describe('rules.list', () => {
       allowedNamespaces: ['personal', 'team-alpha'],
     });
     await client.callTool({
-      name: 'rules.upsert',
+      name: 'rules_upsert',
       arguments: { namespace: 'personal', id: 'a-rule', title: 'A', body: '' },
     });
     await client.callTool({
-      name: 'rules.upsert',
+      name: 'rules_upsert',
       arguments: { namespace: 'team-alpha', id: 'b-rule', title: 'B', body: '' },
     });
     const body = parsePayload(
       (await client.callTool({
-        name: 'rules.list',
+        name: 'rules_list',
         arguments: { namespace: 'team-alpha' },
       })) as never,
     );
@@ -194,17 +194,17 @@ describe('rules.list', () => {
   });
 });
 
-describe('rules.delete', () => {
+describe('rules_delete', () => {
   it('removes the file and updates the index', async () => {
     const { client } = await setupHarness();
     await client.callTool({
-      name: 'rules.upsert',
+      name: 'rules_upsert',
       arguments: { namespace: 'personal', id: 'gone', title: 't', body: '' },
     });
     const indexPath = join(workDir, 'namespaces', 'personal', 'rules', 'INDEX.md');
     expect(await readFile(indexPath, 'utf8')).toContain('gone.md');
     await client.callTool({
-      name: 'rules.delete',
+      name: 'rules_delete',
       arguments: { namespace: 'personal', id: 'gone' },
     });
     expect(await readFile(indexPath, 'utf8')).not.toContain('gone.md');
@@ -214,7 +214,7 @@ describe('rules.delete', () => {
     const { client } = await setupHarness();
     const body = parsePayload(
       (await client.callTool({
-        name: 'rules.delete',
+        name: 'rules_delete',
         arguments: { namespace: 'personal', id: 'missing' },
       })) as never,
     );
@@ -226,7 +226,7 @@ describe('MCP Resources surface', () => {
   it('lists rules as resources across readable namespaces', async () => {
     const { client } = await setupHarness();
     await client.callTool({
-      name: 'rules.upsert',
+      name: 'rules_upsert',
       arguments: {
         namespace: 'personal',
         id: 'res-1',
@@ -242,7 +242,7 @@ describe('MCP Resources surface', () => {
   it('reads a rule via resources/read', async () => {
     const { client } = await setupHarness();
     await client.callTool({
-      name: 'rules.upsert',
+      name: 'rules_upsert',
       arguments: {
         namespace: 'personal',
         id: 'res-read',
@@ -270,7 +270,7 @@ describe('MCP Resources surface', () => {
     );
     await client.subscribeResource({ uri: 'mem://personal/rules/' });
     await client.callTool({
-      name: 'rules.upsert',
+      name: 'rules_upsert',
       arguments: {
         namespace: 'personal',
         id: 'sub-1',
@@ -279,7 +279,7 @@ describe('MCP Resources surface', () => {
       },
     });
     await client.callTool({
-      name: 'rules.delete',
+      name: 'rules_delete',
       arguments: { namespace: 'personal', id: 'sub-1' },
     });
 

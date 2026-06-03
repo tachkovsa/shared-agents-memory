@@ -121,6 +121,8 @@ Plus new from this ADR:
 - `memory.update_metadata` (issue #5 scope)
 - `rules.upsert`, `rules.delete`, `rules.list`, `rules.read` (this ADR §3.1, §3.2)
 
+> **Amendment (2026-06-03): noun.verb → noun_verb.** The dotted `noun.verb` scheme was reversed before GA. Reason: tool names are surfaced to LLMs as provider function-tool definitions, and the **OpenAI function-tool `name` constraint is `^[a-zA-Z0-9_-]{1,64}$` — dots are invalid.** The Codex CLI (and any OpenAI-API-based client) therefore could not expose these tools, while the Anthropic stack silently remapped `.`→`_`, masking the problem. The grouping benefit is preserved by keeping the noun prefix and using an underscore separator. Wire names are now: `memory_store`, `memory_search`, `memory_get`, `memory_update_metadata`, `memory_delete`, `pat_create`, `pat_list`, `pat_revoke`, `pat_rotate`, `namespace_create`, `namespace_list`, `namespace_update`, `namespace_add_member`, `namespace_remove_member`, `namespace_delete`, `rules_list`, `rules_read`, `rules_upsert`, `rules_delete`. Audit **event** types (`pat.minted`, `pat.revoked`, `namespace.member_removed`) are an internal log schema, not tool names, and remain dotted.
+
 ### 3.5 Storage layout on disk
 
 ```

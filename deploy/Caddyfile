@@ -23,8 +23,13 @@ memory.example.com {
     # ------------------------------------------------------------------ TLS
     # Caddy auto-obtains and renews the TLS certificate from Let's Encrypt.
     # No manual certbot step required.
+    #
+    # Allow TLS 1.2 as well as 1.3. The Codex CLI's rmcp Streamable HTTP client
+    # negotiates TLS 1.2 and fails a 1.3-only endpoint with "bad protocol version"
+    # (the MCP session never starts). curl and Claude Code use 1.3 and don't show
+    # this, which makes a 1.3-only server look fine while breaking Codex.
     tls {
-        protocols tls1.3
+        protocols tls1.2 tls1.3
     }
 
     # ------------------------------------------------------------------ Security headers
