@@ -85,11 +85,11 @@ function parsePayload(result: { content: { type: string; text?: string }[] }) {
   return JSON.parse(text);
 }
 
-describe('pat.create', () => {
+describe('pat_create', () => {
   it('two-call ceremony mints a PAT on the second call', async () => {
     const { client, patStore } = await setupHarness();
     const firstCall = await client.callTool({
-      name: 'pat.create',
+      name: 'pat_create',
       arguments: {
         display_name: 'codex',
         agent_identity: 'agent_codex',
@@ -102,7 +102,7 @@ describe('pat.create', () => {
     expect(typeof firstBody.pending.confirmation_token).toBe('string');
 
     const secondCall = await client.callTool({
-      name: 'pat.create',
+      name: 'pat_create',
       arguments: {
         display_name: 'codex',
         agent_identity: 'agent_codex',
@@ -126,7 +126,7 @@ describe('pat.create', () => {
   it('rejects the second call when input changed (input_hash mismatch)', async () => {
     const { client } = await setupHarness();
     const firstCall = await client.callTool({
-      name: 'pat.create',
+      name: 'pat_create',
       arguments: {
         display_name: 'a',
         agent_identity: 'agent_x',
@@ -137,7 +137,7 @@ describe('pat.create', () => {
     const firstBody = parsePayload(firstCall as never);
 
     const second = await client.callTool({
-      name: 'pat.create',
+      name: 'pat_create',
       arguments: {
         display_name: 'a',
         agent_identity: 'agent_x',
@@ -155,7 +155,7 @@ describe('pat.create', () => {
     const { client } = await setupHarness();
     const first = parsePayload(
       (await client.callTool({
-        name: 'pat.create',
+        name: 'pat_create',
         arguments: {
           display_name: 'd',
           agent_identity: 'agent_d',
@@ -166,7 +166,7 @@ describe('pat.create', () => {
     );
     const ok = parsePayload(
       (await client.callTool({
-        name: 'pat.create',
+        name: 'pat_create',
         arguments: {
           display_name: 'd',
           agent_identity: 'agent_d',
@@ -180,7 +180,7 @@ describe('pat.create', () => {
 
     const replay = parsePayload(
       (await client.callTool({
-        name: 'pat.create',
+        name: 'pat_create',
         arguments: {
           display_name: 'd',
           agent_identity: 'agent_d',
@@ -197,7 +197,7 @@ describe('pat.create', () => {
     const { client } = await setupHarness({ sessionScopes: ['memory:read'] });
     const body = parsePayload(
       (await client.callTool({
-        name: 'pat.create',
+        name: 'pat_create',
         arguments: {
           display_name: 'x',
           agent_identity: 'agent_x',
@@ -210,7 +210,7 @@ describe('pat.create', () => {
   });
 });
 
-describe('pat.list', () => {
+describe('pat_list', () => {
   it('admins see all PATs', async () => {
     const { client, patStore, sessionPat } = await setupHarness();
     await patStore.mint({
@@ -221,7 +221,7 @@ describe('pat.list', () => {
       created_by: sessionPat.agent_identity,
     });
     const body = parsePayload(
-      (await client.callTool({ name: 'pat.list', arguments: {} })) as never,
+      (await client.callTool({ name: 'pat_list', arguments: {} })) as never,
     );
     expect(body.pats).toHaveLength(2);
     const identities = body.pats.map((p: { agent_identity: string }) => p.agent_identity);
@@ -246,14 +246,14 @@ describe('pat.list', () => {
       created_by: sessionPat.agent_identity,
     });
     const body = parsePayload(
-      (await client.callTool({ name: 'pat.list', arguments: {} })) as never,
+      (await client.callTool({ name: 'pat_list', arguments: {} })) as never,
     );
     expect(body.pats).toHaveLength(1);
     expect(body.pats[0].agent_identity).toBe('agent_session');
   });
 });
 
-describe('pat.revoke', () => {
+describe('pat_revoke', () => {
   it('admin can revoke any PAT', async () => {
     const { client, patStore, sessionPat } = await setupHarness();
     const minted = await patStore.mint({
@@ -266,7 +266,7 @@ describe('pat.revoke', () => {
 
     const body = parsePayload(
       (await client.callTool({
-        name: 'pat.revoke',
+        name: 'pat_revoke',
         arguments: { pat_id: minted.pat.id, reason: 'cleanup' },
       })) as never,
     );
@@ -288,7 +288,7 @@ describe('pat.revoke', () => {
     });
     const body = parsePayload(
       (await client.callTool({
-        name: 'pat.revoke',
+        name: 'pat_revoke',
         arguments: { pat_id: minted.pat.id, reason: 'attempt' },
       })) as never,
     );
@@ -297,7 +297,7 @@ describe('pat.revoke', () => {
   });
 });
 
-describe('pat.rotate', () => {
+describe('pat_rotate', () => {
   it('rotates a PAT via the two-call ceremony', async () => {
     const { client, patStore, sessionPat } = await setupHarness();
     const minted = await patStore.mint({
@@ -310,7 +310,7 @@ describe('pat.rotate', () => {
 
     const pending = parsePayload(
       (await client.callTool({
-        name: 'pat.rotate',
+        name: 'pat_rotate',
         arguments: { pat_id: minted.pat.id },
       })) as never,
     );
@@ -318,7 +318,7 @@ describe('pat.rotate', () => {
 
     const rotated = parsePayload(
       (await client.callTool({
-        name: 'pat.rotate',
+        name: 'pat_rotate',
         arguments: {
           pat_id: minted.pat.id,
           confirmation_token: pending.pending.confirmation_token,

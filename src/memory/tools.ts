@@ -88,7 +88,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
   }
 
   server.tool(
-    'memory.store',
+    'memory_store',
     'Store an episodic memory in the shared agent memory. Returns the stored memory record.',
     {
       namespace: z.string().describe('Namespace to scope this memory'),
@@ -115,7 +115,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
         .describe('Optional caller-supplied ID for idempotent upsert'),
     },
     async (input) => {
-      const { ctx, error } = await authorize('memory.store', input.namespace, 'memory:write');
+      const { ctx, error } = await authorize('memory_store', input.namespace, 'memory:write');
       if (!ctx) return authErrorResponse(error!);
 
       try {
@@ -138,7 +138,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
   );
 
   server.tool(
-    'memory.search',
+    'memory_search',
     'Search shared episodic memory by semantic similarity with optional tag filters.',
     {
       namespace: z.string().describe('Namespace to search in'),
@@ -157,7 +157,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
         .describe('Filter by tags (AND match)'),
     },
     async (input) => {
-      const { ctx, error } = await authorize('memory.search', input.namespace, 'memory:read');
+      const { ctx, error } = await authorize('memory_search', input.namespace, 'memory:read');
       if (!ctx) return authErrorResponse(error!);
 
       const results = await service.search({
@@ -172,14 +172,14 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
   );
 
   server.tool(
-    'memory.get',
+    'memory_get',
     'Retrieve a specific episodic memory by ID within a namespace.',
     {
       namespace: z.string().describe('Namespace the memory belongs to'),
       id: z.string().uuid().describe('Memory ID'),
     },
     async (input) => {
-      const { ctx, error } = await authorize('memory.get', input.namespace, 'memory:read');
+      const { ctx, error } = await authorize('memory_get', input.namespace, 'memory:read');
       if (!ctx) return authErrorResponse(error!);
 
       try {
@@ -195,7 +195,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
   );
 
   server.tool(
-    'memory.update_metadata',
+    'memory_update_metadata',
     'Update an existing episodic memory\'s metadata, tags, summary, or source without re-embedding the content.',
     {
       namespace: z.string().describe('Namespace the memory belongs to'),
@@ -214,7 +214,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
     },
     async (input) => {
       const { ctx, error } = await authorize(
-        'memory.update_metadata',
+        'memory_update_metadata',
         input.namespace,
         'memory:write',
       );
@@ -241,14 +241,14 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
   );
 
   server.tool(
-    'memory.delete',
+    'memory_delete',
     'Delete an episodic memory by ID within a namespace.',
     {
       namespace: z.string().describe('Namespace the memory belongs to'),
       id: z.string().uuid().describe('Memory ID to delete'),
     },
     async (input) => {
-      const { ctx, error } = await authorize('memory.delete', input.namespace, 'memory:delete');
+      const { ctx, error } = await authorize('memory_delete', input.namespace, 'memory:delete');
       if (!ctx) return authErrorResponse(error!);
 
       try {

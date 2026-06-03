@@ -247,7 +247,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
   // namespace.create — requires service:admin; two-call confirmation ceremony
   // --------------------------------------------------------------------------
   server.tool(
-    'namespace.create',
+    'namespace_create',
     'Create a new namespace with the given ID and owner. Two-call confirmation ceremony (ADR-0004 §3.5). Requires service:admin.',
     {
       id: namespaceIdSchema,
@@ -261,7 +261,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
         .describe('Pass the token from the pending envelope to actually create.'),
     },
     async (input) => {
-      const adminErr = await requireServiceAdmin('namespace.create');
+      const adminErr = await requireServiceAdmin('namespace_create');
       if (adminErr) return authErrorResponse(adminErr);
 
       const inputForHash = {
@@ -274,7 +274,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
 
       if (!input.confirmation_token) {
         return buildPending(
-          'namespace.create',
+          'namespace_create',
           inputForHash,
           `Create namespace "${input.id}" (${input.display_name}) owned by "${input.owner_agent_id}". A new directory will be created under data/namespaces/${input.id}/.`,
           {
@@ -287,7 +287,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
         );
       }
 
-      const verified = verifyAndConsume('namespace.create', input.confirmation_token, inputForHash);
+      const verified = verifyAndConsume('namespace_create', input.confirmation_token, inputForHash);
       if (!verified.ok) return verified.response;
 
       try {
@@ -311,7 +311,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
           now,
         });
 
-        await recordAuthSuccess('namespace.create', 'service:admin');
+        await recordAuthSuccess('namespace_create', 'service:admin');
         return jsonResponse({
           namespace_id: ns.id,
           display_name: ns.display_name,
@@ -337,11 +337,11 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
   //                  see only namespaces they are a member of (or owner of)
   // --------------------------------------------------------------------------
   server.tool(
-    'namespace.list',
+    'namespace_list',
     'List namespaces. Admins (service:admin) see all. Others see only namespaces they are a member of.',
     {},
     async () => {
-      await recordAuthSuccess('namespace.list', isServiceAdmin ? 'service:admin' : 'memory:read');
+      await recordAuthSuccess('namespace_list', isServiceAdmin ? 'service:admin' : 'memory:read');
 
       const allIds = await listNamespaceIds(dataDir);
       const result: {
@@ -396,7 +396,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
   // namespace.update — requires namespace:admin on the target namespace
   // --------------------------------------------------------------------------
   server.tool(
-    'namespace.update',
+    'namespace_update',
     'Update namespace display_name, retention_policy, or quota. Requires namespace:admin on the target namespace.',
     {
       id: namespaceIdSchema,
@@ -405,7 +405,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
       quota: quotaSchema.optional().describe('Quota fields to merge with existing quota'),
     },
     async (input) => {
-      const nsAdminErr = await requireNamespaceAdmin('namespace.update', input.id);
+      const nsAdminErr = await requireNamespaceAdmin('namespace_update', input.id);
       if (nsAdminErr) return authErrorResponse(nsAdminErr);
 
       const ns = await loadNamespace(dataDir, input.id);
@@ -428,7 +428,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
       };
 
       await saveNamespace(dataDir, updated);
-      await recordAuthSuccess('namespace.update', 'namespace:admin');
+      await recordAuthSuccess('namespace_update', 'namespace:admin');
 
       return jsonResponse({
         namespace_id: updated.id,
@@ -444,7 +444,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
   // namespace.add_member — requires namespace:admin on the target namespace
   // --------------------------------------------------------------------------
   server.tool(
-    'namespace.add_member',
+    'namespace_add_member',
     'Add an agent as a member of a namespace with the given scopes. Requires namespace:admin.',
     {
       id: namespaceIdSchema,
@@ -452,7 +452,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
       scopes: z.array(scopeSchema).min(1).describe('Scopes to grant to the agent in this namespace'),
     },
     async (input) => {
-      const nsAdminErr = await requireNamespaceAdmin('namespace.add_member', input.id);
+      const nsAdminErr = await requireNamespaceAdmin('namespace_add_member', input.id);
       if (nsAdminErr) return authErrorResponse(nsAdminErr);
 
       const ns = await loadNamespace(dataDir, input.id);
@@ -476,7 +476,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
       }
 
       await saveMembers(dataDir, input.id, members);
-      await recordAuthSuccess('namespace.add_member', 'namespace:admin');
+      await recordAuthSuccess('namespace_add_member', 'namespace:admin');
 
       return jsonResponse({
         namespace_id: input.id,
@@ -492,14 +492,14 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
   // namespace.remove_member — requires namespace:admin on the target namespace
   // --------------------------------------------------------------------------
   server.tool(
-    'namespace.remove_member',
+    'namespace_remove_member',
     'Remove an agent from a namespace. Requires namespace:admin.',
     {
       id: namespaceIdSchema,
       agent_id: z.string().min(1).describe('Agent identity to remove'),
     },
     async (input) => {
-      const nsAdminErr = await requireNamespaceAdmin('namespace.remove_member', input.id);
+      const nsAdminErr = await requireNamespaceAdmin('namespace_remove_member', input.id);
       if (nsAdminErr) return authErrorResponse(nsAdminErr);
 
       const ns = await loadNamespace(dataDir, input.id);
@@ -517,7 +517,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
       }
 
       await saveMembers(dataDir, input.id, filtered);
-      await recordAuthSuccess('namespace.remove_member', 'namespace:admin');
+      await recordAuthSuccess('namespace_remove_member', 'namespace:admin');
 
       return jsonResponse({
         namespace_id: input.id,
@@ -532,7 +532,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
   //                    refuses to delete the bootstrap "personal" namespace
   // --------------------------------------------------------------------------
   server.tool(
-    'namespace.delete',
+    'namespace_delete',
     'Soft-delete a namespace (move to data/_deleted/<id>-<ts>/, 30-day grace before hard delete). Requires service:admin. Two-call confirmation ceremony. Cannot delete "personal".',
     {
       id: namespaceIdSchema,
@@ -542,7 +542,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
         .describe('Pass the token from the pending envelope to actually delete.'),
     },
     async (input) => {
-      const adminErr = await requireServiceAdmin('namespace.delete');
+      const adminErr = await requireServiceAdmin('namespace_delete');
       if (adminErr) return authErrorResponse(adminErr);
 
       // Guard: never delete the bootstrap namespace via MCP.
@@ -564,7 +564,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
 
       if (!input.confirmation_token) {
         return buildPending(
-          'namespace.delete',
+          'namespace_delete',
           inputForHash,
           `Soft-delete namespace "${input.id}" (${ns.display_name}). The directory will be moved to data/_deleted/${input.id}-<timestamp>/. Grace period: 30 days before hard delete.`,
           {
@@ -576,12 +576,12 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
         );
       }
 
-      const verified = verifyAndConsume('namespace.delete', input.confirmation_token, inputForHash);
+      const verified = verifyAndConsume('namespace_delete', input.confirmation_token, inputForHash);
       if (!verified.ok) return verified.response;
 
       try {
         const deletedPath = await softDeleteNamespace(dataDir, input.id, now().getTime());
-        await recordAuthSuccess('namespace.delete', 'service:admin');
+        await recordAuthSuccess('namespace_delete', 'service:admin');
         return jsonResponse({
           namespace_id: input.id,
           deleted: true,

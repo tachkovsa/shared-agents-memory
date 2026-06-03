@@ -101,13 +101,13 @@ function parsePayload(result: { content: { type: string; text?: string }[] }) {
 // ============================================================================
 // namespace.create
 // ============================================================================
-describe('namespace.create', () => {
+describe('namespace_create', () => {
   it('two-call: pending → created; directory layout exists; owner is member with all scopes', async () => {
     const { client } = await setupHarness();
 
     const firstCall = parsePayload(
       (await client.callTool({
-        name: 'namespace.create',
+        name: 'namespace_create',
         arguments: {
           id: 'team-alpha',
           display_name: 'Team Alpha',
@@ -121,7 +121,7 @@ describe('namespace.create', () => {
 
     const secondCall = parsePayload(
       (await client.callTool({
-        name: 'namespace.create',
+        name: 'namespace_create',
         arguments: {
           id: 'team-alpha',
           display_name: 'Team Alpha',
@@ -151,7 +151,7 @@ describe('namespace.create', () => {
     const { client } = await setupHarness({ sessionScopes: ['memory:read'] });
     const body = parsePayload(
       (await client.callTool({
-        name: 'namespace.create',
+        name: 'namespace_create',
         arguments: { id: 'team-alpha', display_name: 'Team Alpha', owner_agent_id: 'agent_x' },
       })) as never,
     );
@@ -163,7 +163,7 @@ describe('namespace.create', () => {
 
     const first = parsePayload(
       (await client.callTool({
-        name: 'namespace.create',
+        name: 'namespace_create',
         arguments: { id: 'ns-one', display_name: 'NS One', owner_agent_id: 'agent_x' },
       })) as never,
     );
@@ -171,7 +171,7 @@ describe('namespace.create', () => {
     // Change the input (different display_name) but reuse the token.
     const second = parsePayload(
       (await client.callTool({
-        name: 'namespace.create',
+        name: 'namespace_create',
         arguments: {
           id: 'ns-one',
           display_name: 'NS One TAMPERED',
@@ -189,13 +189,13 @@ describe('namespace.create', () => {
 
     const args = { id: 'ns-two', display_name: 'NS Two', owner_agent_id: 'agent_x' };
     const first = parsePayload(
-      (await client.callTool({ name: 'namespace.create', arguments: args })) as never,
+      (await client.callTool({ name: 'namespace_create', arguments: args })) as never,
     );
 
     // First confirm: success.
     const ok = parsePayload(
       (await client.callTool({
-        name: 'namespace.create',
+        name: 'namespace_create',
         arguments: { ...args, confirmation_token: first.pending.confirmation_token },
       })) as never,
     );
@@ -204,7 +204,7 @@ describe('namespace.create', () => {
     // Second confirm: replay.
     const replay = parsePayload(
       (await client.callTool({
-        name: 'namespace.create',
+        name: 'namespace_create',
         arguments: { ...args, confirmation_token: first.pending.confirmation_token },
       })) as never,
     );
@@ -216,20 +216,20 @@ describe('namespace.create', () => {
 
     const args = { id: 'target', display_name: 'Target', owner_agent_id: 'agent_x' };
     const first = parsePayload(
-      (await client.callTool({ name: 'namespace.create', arguments: args })) as never,
+      (await client.callTool({ name: 'namespace_create', arguments: args })) as never,
     );
     await client.callTool({
-      name: 'namespace.create',
+      name: 'namespace_create',
       arguments: { ...args, confirmation_token: first.pending.confirmation_token },
     });
 
     // Try to create it again.
     const first2 = parsePayload(
-      (await client.callTool({ name: 'namespace.create', arguments: args })) as never,
+      (await client.callTool({ name: 'namespace_create', arguments: args })) as never,
     );
     const dupe = parsePayload(
       (await client.callTool({
-        name: 'namespace.create',
+        name: 'namespace_create',
         arguments: { ...args, confirmation_token: first2.pending.confirmation_token },
       })) as never,
     );
@@ -240,7 +240,7 @@ describe('namespace.create', () => {
 // ============================================================================
 // namespace.list
 // ============================================================================
-describe('namespace.list', () => {
+describe('namespace_list', () => {
   it('admin sees all namespaces', async () => {
     const { client } = await setupHarness();
 
@@ -259,7 +259,7 @@ describe('namespace.list', () => {
     });
 
     const body = parsePayload(
-      (await client.callTool({ name: 'namespace.list', arguments: {} })) as never,
+      (await client.callTool({ name: 'namespace_list', arguments: {} })) as never,
     );
     expect(body.namespaces).toHaveLength(2);
     const ids = body.namespaces.map((n: { id: string }) => n.id);
@@ -320,7 +320,7 @@ describe('namespace.list', () => {
     await saveMembers(workDir, 'ns-one', ns1Members);
 
     const body = parsePayload(
-      (await client.callTool({ name: 'namespace.list', arguments: {} })) as never,
+      (await client.callTool({ name: 'namespace_list', arguments: {} })) as never,
     );
     expect(body.namespaces).toHaveLength(1);
     expect(body.namespaces[0].id).toBe('ns-one');
@@ -330,7 +330,7 @@ describe('namespace.list', () => {
 // ============================================================================
 // namespace.update
 // ============================================================================
-describe('namespace.update', () => {
+describe('namespace_update', () => {
   it('requires namespace:admin — non-member gets scope_insufficient or namespace_forbidden', async () => {
     const { client } = await setupHarness({ sessionScopes: ['memory:read'] });
 
@@ -343,7 +343,7 @@ describe('namespace.update', () => {
 
     const body = parsePayload(
       (await client.callTool({
-        name: 'namespace.update',
+        name: 'namespace_update',
         arguments: { id: 'ns-one', display_name: 'Updated' },
       })) as never,
     );
@@ -364,7 +364,7 @@ describe('namespace.update', () => {
 
     const body = parsePayload(
       (await client.callTool({
-        name: 'namespace.update',
+        name: 'namespace_update',
         arguments: {
           id: 'ns-one',
           display_name: 'NS One Updated',
@@ -396,7 +396,7 @@ describe('namespace.add_member and namespace.remove_member', () => {
 
     const body = parsePayload(
       (await client.callTool({
-        name: 'namespace.add_member',
+        name: 'namespace_add_member',
         arguments: {
           id: 'ns-one',
           agent_id: 'agent_new',
@@ -423,13 +423,13 @@ describe('namespace.add_member and namespace.remove_member', () => {
 
     // Add a member first.
     await client.callTool({
-      name: 'namespace.add_member',
+      name: 'namespace_add_member',
       arguments: { id: 'ns-one', agent_id: 'agent_new', scopes: ['memory:read'] },
     });
 
     const removeBody = parsePayload(
       (await client.callTool({
-        name: 'namespace.remove_member',
+        name: 'namespace_remove_member',
         arguments: { id: 'ns-one', agent_id: 'agent_new' },
       })) as never,
     );
@@ -451,7 +451,7 @@ describe('namespace.add_member and namespace.remove_member', () => {
 
     const body = parsePayload(
       (await client.callTool({
-        name: 'namespace.remove_member',
+        name: 'namespace_remove_member',
         arguments: { id: 'ns-one', agent_id: 'agent_ghost' },
       })) as never,
     );
@@ -462,7 +462,7 @@ describe('namespace.add_member and namespace.remove_member', () => {
 // ============================================================================
 // namespace.delete
 // ============================================================================
-describe('namespace.delete', () => {
+describe('namespace_delete', () => {
   it('two-call: target dir is moved to _deleted/ with contents intact', async () => {
     const { client } = await setupHarness();
 
@@ -476,7 +476,7 @@ describe('namespace.delete', () => {
 
     const pending = parsePayload(
       (await client.callTool({
-        name: 'namespace.delete',
+        name: 'namespace_delete',
         arguments: { id: 'ns-one' },
       })) as never,
     );
@@ -485,7 +485,7 @@ describe('namespace.delete', () => {
 
     const done = parsePayload(
       (await client.callTool({
-        name: 'namespace.delete',
+        name: 'namespace_delete',
         arguments: { id: 'ns-one', confirmation_token: pending.pending.confirmation_token },
       })) as never,
     );
@@ -514,7 +514,7 @@ describe('namespace.delete', () => {
 
     const body = parsePayload(
       (await client.callTool({
-        name: 'namespace.delete',
+        name: 'namespace_delete',
         arguments: { id: 'personal' },
       })) as never,
     );
@@ -526,7 +526,7 @@ describe('namespace.delete', () => {
 
     const body = parsePayload(
       (await client.callTool({
-        name: 'namespace.delete',
+        name: 'namespace_delete',
         arguments: { id: 'ns-one' },
       })) as never,
     );
@@ -562,7 +562,7 @@ describe('orphan member prune on pat.revoke', () => {
 
     for (const id of ['ns-one', 'ns-two']) {
       await client.callTool({
-        name: 'namespace.add_member',
+        name: 'namespace_add_member',
         arguments: { id, agent_id: 'agent_member', scopes: ['memory:read'] },
       });
     }
@@ -576,7 +576,7 @@ describe('orphan member prune on pat.revoke', () => {
     // Revoke the only PAT for agent_member.
     const revokeBody = parsePayload(
       (await client.callTool({
-        name: 'pat.revoke',
+        name: 'pat_revoke',
         arguments: { pat_id: memberPat.pat.id, reason: 'cleanup' },
       })) as never,
     );
@@ -617,13 +617,13 @@ describe('orphan member prune on pat.revoke', () => {
 
     // Add member to namespace.
     await client.callTool({
-      name: 'namespace.add_member',
+      name: 'namespace_add_member',
       arguments: { id: 'ns-one', agent_id: 'agent_member', scopes: ['memory:read'] },
     });
 
     // Revoke only the first PAT (second still exists).
     await client.callTool({
-      name: 'pat.revoke',
+      name: 'pat_revoke',
       arguments: { pat_id: pat1.pat.id, reason: 'test' },
     });
 
