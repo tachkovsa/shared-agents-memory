@@ -208,7 +208,7 @@ export function registerRuleTools(server: McpServer, deps: RuleToolDeps): void {
 
   // ---------- Tool: rules.list (shim) ----------
   server.tool(
-    'rules.list',
+    'rules_list',
     'List rules visible to the caller (shim for clients with weak Resource UX).',
     {
       namespace: z
@@ -235,7 +235,7 @@ export function registerRuleTools(server: McpServer, deps: RuleToolDeps): void {
 
       for (const ns of namespaces) {
         if (input.namespace) {
-          const err = await authorize('rules.list', ns, 'rules:read');
+          const err = await authorize('rules_list', ns, 'rules:read');
           if (err) return authErrorResponse(err);
         }
         try {
@@ -261,14 +261,14 @@ export function registerRuleTools(server: McpServer, deps: RuleToolDeps): void {
 
   // ---------- Tool: rules.read (shim) ----------
   server.tool(
-    'rules.read',
+    'rules_read',
     'Read a single rule by namespace + id (shim for resources/read).',
     {
       namespace: z.string().min(1).describe('Namespace the rule belongs to'),
       id: ruleIdSchema,
     },
     async (input) => {
-      const err = await authorize('rules.read', input.namespace, 'rules:read');
+      const err = await authorize('rules_read', input.namespace, 'rules:read');
       if (err) return authErrorResponse(err);
       try {
         const rule = await loadRule(dataDir, input.namespace, input.id);
@@ -289,7 +289,7 @@ export function registerRuleTools(server: McpServer, deps: RuleToolDeps): void {
 
   // ---------- Tool: rules.upsert (rules:write) ----------
   server.tool(
-    'rules.upsert',
+    'rules_upsert',
     'Create or replace a rule. Writes are atomic (tmp + fsync + rename) and serialized per namespace.',
     {
       namespace: z.string().min(1).describe('Namespace the rule belongs to'),
@@ -304,7 +304,7 @@ export function registerRuleTools(server: McpServer, deps: RuleToolDeps): void {
       severity: ruleSeveritySchema.optional().describe('hard (default) or soft'),
     },
     async (input) => {
-      const err = await authorize('rules.upsert', input.namespace, 'rules:write');
+      const err = await authorize('rules_upsert', input.namespace, 'rules:write');
       if (err) return authErrorResponse(err);
       try {
         const rule = await upsertRule(dataDir, input.namespace, {
@@ -337,14 +337,14 @@ export function registerRuleTools(server: McpServer, deps: RuleToolDeps): void {
 
   // ---------- Tool: rules.delete (rules:write) ----------
   server.tool(
-    'rules.delete',
+    'rules_delete',
     'Delete a rule. Removes the file and regenerates the namespace INDEX.md.',
     {
       namespace: z.string().min(1).describe('Namespace the rule belongs to'),
       id: ruleIdSchema,
     },
     async (input) => {
-      const err = await authorize('rules.delete', input.namespace, 'rules:write');
+      const err = await authorize('rules_delete', input.namespace, 'rules:write');
       if (err) return authErrorResponse(err);
       try {
         await deleteRule(dataDir, input.namespace, input.id);

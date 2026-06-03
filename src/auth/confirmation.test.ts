@@ -17,7 +17,7 @@ function makePayload(overrides: Partial<{
 }> = {}) {
   return {
     session_id: 'sess_1',
-    tool_id: 'pat.create',
+    tool_id: 'pat_create',
     input_hash: canonicalJsonHash({ a: 1 }),
     expires_at: Date.now() + 60_000,
     ...overrides,
@@ -125,7 +125,7 @@ describe('makeConfirmation + verifyConfirmation', () => {
     const token = makeConfirmation(payload, PEPPER);
     const result = verifyConfirmation(
       token,
-      { session_id: payload.session_id, tool_id: 'pat.rotate', input_hash: payload.input_hash },
+      { session_id: payload.session_id, tool_id: 'pat_rotate', input_hash: payload.input_hash },
       PEPPER,
     );
     expect(result).toEqual({ ok: false, reason: 'mismatch' });

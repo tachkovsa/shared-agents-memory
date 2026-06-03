@@ -24,6 +24,7 @@ import { MemoryService, registerMemoryTools } from '../memory/index.js';
 import { makeOrphanPruneCallback, registerNamespaceTools } from '../namespaces/tools.js';
 import { initCollection } from '../qdrant.js';
 import { registerRuleTools } from '../rules/index.js';
+import { omitDefaultForbiddenToolExecution } from './codex-compat.js';
 
 const STDIO_PAT_ENV_VAR = 'LOCAL_STDIO_AGENT_PAT';
 
@@ -111,6 +112,8 @@ export async function runStdioTransport(deps: StdioDeps): Promise<void> {
     auditor,
     dataDir: config.storage.dataDir,
   });
+
+  omitDefaultForbiddenToolExecution(server);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

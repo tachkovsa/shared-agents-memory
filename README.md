@@ -19,7 +19,7 @@ Two transports: **stdio** for local dev (single-agent subprocess), **streamable 
 
 - **Namespaces** are the tenancy boundary (ADR-0002). Bootstrap creates `personal`; you can add more (`work`, `team-foo`, …).
 - **PATs** (`sam_pat_*`) are per-agent credentials, scoped to specific namespaces + specific operations (ADR-0004).
-- **Tools** follow `noun.verb` naming: `memory.store`, `pat.create`, `namespace.add_member`, `rules.upsert`, etc.
+- **Tools** follow `noun_verb` naming: `memory_store`, `pat_create`, `namespace_add_member`, `rules_upsert`, etc. (underscore separator — OpenAI/Codex function-tool names disallow dots; ADR-0001 §3.4).
 
 For the why behind each choice see [`docs/adr/`](docs/adr/).
 
@@ -82,7 +82,7 @@ For local-dev (stdio mode), set `LOCAL_STDIO_AGENT_PAT=sam_pat_…` and run `npm
 
 ### 3. Verify
 
-Once the client is wired, ask the agent to list available tools — you should see ~19 of them, grouped `memory.*`, `pat.*`, `namespace.*`, `rules.*`. From there you can ask the agent to `memory.store`, `memory.search`, etc.
+Once the client is wired, ask the agent to list available tools — you should see ~19 of them, grouped `memory_*`, `pat_*`, `namespace_*`, `rules_*`. From there you can ask the agent to `memory_store`, `memory_search`, etc.
 
 ---
 
@@ -108,11 +108,11 @@ ssh root@<vds> 'rm -f /var/lib/shared-agents-memory/data/_auth/.bootstrap_token'
 
 | Scope | What it lets the PAT do |
 |---|---|
-| `memory:read` | `memory.search`, `memory.get` |
-| `memory:write` | `memory.store`, `memory.update_metadata` |
-| `memory:delete` | `memory.delete` |
-| `rules:read` | `rules.list`, `rules.read`, read `mem://<ns>/rules/*` resources |
-| `rules:write` | `rules.upsert`, `rules.delete` |
+| `memory:read` | `memory_search`, `memory_get` |
+| `memory:write` | `memory_store`, `memory_update_metadata` |
+| `memory:delete` | `memory_delete` |
+| `rules:read` | `rules_list`, `rules_read`, read `mem://<ns>/rules/*` resources |
+| `rules:write` | `rules_upsert`, `rules_delete` |
 | `namespace:admin` | manage members + quota + retention of namespaces you own |
 | `service:admin` | manage PATs + namespaces globally; the "root" scope |
 
@@ -121,7 +121,7 @@ ssh root@<vds> 'rm -f /var/lib/shared-agents-memory/data/_auth/.bootstrap_token'
 Ask an admin-scoped agent (or your own MCP client with the bootstrap/admin PAT) to call:
 
 ```jsonc
-// tools/call → pat.create
+// tools/call → pat_create
 {
   "display_name": "claude-code-laptop",
   "agent_identity": "agent_claude_code_laptop",
@@ -149,7 +149,7 @@ The response includes the **plaintext secret** — that's the only time it's sho
 ### List PATs
 
 ```jsonc
-// tools/call → pat.list (no arguments)
+// tools/call → pat_list (no arguments)
 ```
 
 Returns metadata only (id, display_name, scopes, allowed_namespaces, created_at, last_used_at, is_revoked) — never the secrets themselves. Use this to audit "what's currently valid?".
@@ -157,8 +157,8 @@ Returns metadata only (id, display_name, scopes, allowed_namespaces, created_at,
 ### Rotate a PAT (issue new secret, invalidate old)
 
 ```jsonc
-// tools/call → pat.rotate
-{ "pat_id": "<id-from-pat.list>" }
+// tools/call → pat_rotate
+{ "pat_id": "<id-from-pat_list>" }
 ```
 
 Response includes a new plaintext secret. Old one stops working immediately. Use when a PAT is suspected leaked.
@@ -166,7 +166,7 @@ Response includes a new plaintext secret. Old one stops working immediately. Use
 ### Revoke a PAT
 
 ```jsonc
-// tools/call → pat.revoke
+// tools/call → pat_revoke
 { "pat_id": "<id>", "reason": "agent decommissioned" }
 ```
 
@@ -185,7 +185,7 @@ A namespace is the **tenancy boundary**. Memories, rules, and audit logs live un
 ### Create a new namespace
 
 ```jsonc
-// tools/call → namespace.create
+// tools/call → namespace_create
 {
   "id": "work",                // kebab-case, 3-40 chars
   "display_name": "Work",
@@ -202,7 +202,7 @@ Requires `service:admin`. The caller is added as the namespace's first member wi
 ### Add a member (give another agent access to a namespace)
 
 ```jsonc
-// tools/call → namespace.add_member
+// tools/call → namespace_add_member
 {
   "namespace_id": "work",
   "agent_identity": "agent_claude_code_laptop",
@@ -215,7 +215,7 @@ Requires `namespace:admin` on the target namespace (or `service:admin`).
 ### List namespaces
 
 ```jsonc
-// tools/call → namespace.list   // returns namespaces YOU are a member of
+// tools/call → namespace_list   // returns namespaces YOU are a member of
 ```
 
 For `service:admin` PATs, returns all namespaces.
@@ -223,7 +223,7 @@ For `service:admin` PATs, returns all namespaces.
 ### Update a namespace
 
 ```jsonc
-// tools/call → namespace.update
+// tools/call → namespace_update
 {
   "namespace_id": "work",
   "display_name": "Work projects",
@@ -235,14 +235,14 @@ For `service:admin` PATs, returns all namespaces.
 ### Remove a member
 
 ```jsonc
-// tools/call → namespace.remove_member
+// tools/call → namespace_remove_member
 { "namespace_id": "work", "agent_identity": "agent_old_agent" }
 ```
 
 ### Delete a namespace
 
 ```jsonc
-// tools/call → namespace.delete
+// tools/call → namespace_delete
 { "namespace_id": "work", "confirmation": "DELETE work" }
 ```
 
@@ -257,7 +257,7 @@ Episodic memories live in Qdrant, embedded via OpenRouter (ADR-0005 — `qwen/qw
 ### Store
 
 ```jsonc
-// tools/call → memory.store
+// tools/call → memory_store
 {
   "namespace": "personal",
   "content": "Anna prefers cold brew, sweet, with oat milk. Mentioned 2026-03-04.",
@@ -273,7 +273,7 @@ Response: `{"id":"<uuid>","created_at":"…"}`. Content is embedded once and sto
 ### Search (semantic)
 
 ```jsonc
-// tools/call → memory.search
+// tools/call → memory_search
 {
   "namespace": "personal",
   "query": "what does Anna drink?",
@@ -287,18 +287,18 @@ Returns ranked results with `score` (cosine similarity), the full memory record,
 ### Get / update / delete
 
 ```jsonc
-// tools/call → memory.get
+// tools/call → memory_get
 { "namespace": "personal", "id": "<uuid>" }
 ```
 
 ```jsonc
-// tools/call → memory.update_metadata
+// tools/call → memory_update_metadata
 // Updates tags/summary/source/metadata without re-embedding the content.
 { "namespace": "personal", "id": "<uuid>", "tags": ["new","tags"] }
 ```
 
 ```jsonc
-// tools/call → memory.delete
+// tools/call → memory_delete
 { "namespace": "personal", "id": "<uuid>" }
 ```
 
@@ -313,7 +313,7 @@ Rules are markdown files with frontmatter — small, deterministic guidance the 
 ### Write a rule
 
 ```jsonc
-// tools/call → rules.upsert
+// tools/call → rules_upsert
 {
   "namespace": "personal",
   "id": "no-force-push",            // kebab-case, becomes filename + URI
@@ -327,9 +327,9 @@ Rules are markdown files with frontmatter — small, deterministic guidance the 
 ### Read / list / delete
 
 ```jsonc
-// tools/call → rules.read   { "namespace": "personal", "id": "no-force-push" }
-// tools/call → rules.list   { "namespace": "personal" }   // or omit namespace for all readable
-// tools/call → rules.delete { "namespace": "personal", "id": "no-force-push" }
+// tools/call → rules_read   { "namespace": "personal", "id": "no-force-push" }
+// tools/call → rules_list   { "namespace": "personal" }   // or omit namespace for all readable
+// tools/call → rules_delete { "namespace": "personal", "id": "no-force-push" }
 ```
 
 MCP-aware clients also see rules as Resources (`resources/list`, `resources/read`) — no explicit tool call needed; the client pulls them in automatically every turn.
@@ -375,7 +375,7 @@ All locked in [`docs/adr/`](docs/adr/) — change protocol is "supersede by new 
 
 | ADR | Locks |
 |---|---|
-| [0001](docs/adr/0001-hybrid-memory-architecture.md) | Two memory classes (rules + episodic); `noun.verb` tool naming |
+| [0001](docs/adr/0001-hybrid-memory-architecture.md) | Two memory classes (rules + episodic); `noun_verb` tool naming |
 | [0002](docs/adr/0002-namespace-tenancy-model.md) | Namespaces as tenancy boundary; cross-namespace deny-by-default |
 | [0003](docs/adr/0003-transport-stdio-and-http.md) | stdio (dev) + streamable HTTP (prod); Origin header validation |
 | [0004](docs/adr/0004-auth-pat-v1.md) | PAT v1 (OAuth/DCR deferred); HMAC+pepper storage |
