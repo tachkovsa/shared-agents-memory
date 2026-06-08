@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ScryptPasswordHasher } from '../auth/password.js';
@@ -6,6 +9,14 @@ import { openDb, type Db } from '../stores/db.js';
 import { SqliteOperatorStore } from '../stores/operator-store.js';
 import { SqliteSessionStore } from '../stores/session-store.js';
 import { SESSION_COOKIE, createAdminApp } from './app.js';
+
+function makeSessions(database: Db) {
+  return new SessionService({
+    operators: new SqliteOperatorStore(database),
+    sessions: new SqliteSessionStore(database),
+    hasher: new ScryptPasswordHasher({ N: 16384, r: 8, p: 1 }),
+  });
+}
 
 let db: Db;
 let app: FastifyInstance;
@@ -135,5 +146,48 @@ describe('admin auth routes', () => {
       cookies: { [SESSION_COOKIE]: sessionId },
     });
     expect(me.statusCode).toBe(401);
+  });
+});
+
+describe('admin SPA static serving', () => {
+  let staticDb: Db;
+  let staticApp: FastifyInstance;
+  let staticDir: string;
+
+  beforeEach(async () => {
+    staticDir = await mkdtemp(join(tmpdir(), 'sam-spa-'));
+    await writeFile(join(staticDir, 'index.html'), '<!doctype html><title>SAM</title>');
+    staticDb = openDb(':memory:');
+    staticApp = await createAdminApp({
+      sessions: makeSessions(staticDb),
+      operators: new SqliteOperatorStore(staticDb),
+      cookieSecure: false,
+      staticDir,
+    });
+    await staticApp.ready();
+  });
+
+  afterEach(async () => {
+    await staticApp.close();
+    staticDb.close();
+    await rm(staticDir, { recursive: true, force: true });
+  });
+
+  it('serves index.html at the root', async () => {
+    const res = await staticApp.inject({ method: 'GET', url: '/' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('<title>SAM</title>');
+  });
+
+  it('falls back to index.html for a client-side route', async () => {
+    const res = await staticApp.inject({ method: 'GET', url: '/namespaces' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('<title>SAM</title>');
+  });
+
+  it('keeps /api/* as a JSON 404, not the SPA', async () => {
+    const res = await staticApp.inject({ method: 'GET', url: '/api/admin/does-not-exist' });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'not_found' });
   });
 });
