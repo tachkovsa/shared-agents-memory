@@ -16,8 +16,22 @@ FROM node:${NODE_VERSION} AS builder
 
 WORKDIR /app
 
+# Toolchain for native modules. @node-rs/argon2 ships prebuilt binaries, but
+# better-sqlite3 compiles from source when no prebuilt matches the build arch
+# (e.g. linux/arm64). These live in the builder only — the runtime stays slim
+# and receives the already-compiled .node files via the node_modules copy.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY package.json package-lock.json ./
-RUN npm ci
+# rollup and @tailwindcss/oxide pull platform-specific native binaries via
+# optionalDependencies. A macOS-generated lockfile pins the darwin variants and
+# npm won't backfill the linux ones (npm/cli#4828), so `npm ci` / `npm install`
+# leave rollup's native binding missing in the container. Dropping the lockfile
+# forces a clean platform-correct resolution — works in local Docker (arm64) and
+# GHA (x64) alike. package.json ranges still bound the versions.
+RUN rm -f package-lock.json && npm install --no-audit --no-fund
 
 COPY tsconfig.json ./
 COPY src ./src
