@@ -19,22 +19,31 @@ export function SetupPage() {
   const setup = useSetup();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [setupToken, setSetupToken] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    const parsed = setupSchema.safeParse({ username, password });
-    if (!parsed.success) {
-      setError('Username must be 3+ chars and password 8+.');
+    const parsed = setupSchema.safeParse({
+      username,
+      password,
+      setup_token: setupToken,
+    });
+    if (!parsed.success || !setupToken) {
+      setError('Fill in the setup token, a 3+ char username, and an 8+ char password.');
       return;
     }
     try {
-      await setup.mutateAsync(parsed.data);
+      await setup.mutateAsync({ username, password, setup_token: setupToken });
       navigate('/');
     } catch (err) {
       if (err instanceof ApiError && err.code === 'setup_closed') {
         setError('Setup is already complete. Sign in instead.');
+        return;
+      }
+      if (err instanceof ApiError && err.code === 'invalid_setup_token') {
+        setError('That setup token is wrong. Copy it from the server logs.');
         return;
       }
       setError('Could not create the first operator.');
@@ -46,10 +55,21 @@ export function SetupPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Welcome to SAM</CardTitle>
-          <CardDescription>Create the first operator account</CardDescription>
+          <CardDescription>
+            Create the first operator. The setup token is printed in the server logs.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="flex flex-col gap-4" onSubmit={onSubmit}>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="setup-token">Setup token</Label>
+              <Input
+                id="setup-token"
+                autoComplete="off"
+                value={setupToken}
+                onChange={(e) => setSetupToken(e.target.value)}
+              />
+            </div>
             <div className="flex flex-col gap-2">
               <Label htmlFor="username">Username</Label>
               <Input
