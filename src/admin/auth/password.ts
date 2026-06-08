@@ -1,5 +1,6 @@
 import { randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from 'node:crypto';
 import { promisify } from 'node:util';
+import { Algorithm, hash as argon2Hash, verify as argon2Verify } from '@node-rs/argon2';
 
 const scryptAsync = promisify(scrypt) as (
   password: string | Buffer,
@@ -86,5 +87,32 @@ export class ScryptPasswordHasher implements PasswordHasher {
       maxmem: maxmemFor({ N, r, p }),
     });
     return derived.length === expected.length && timingSafeEqual(derived, expected);
+  }
+}
+
+// OWASP argon2id baseline: 19 MiB, 2 iterations, 1 lane.
+const ARGON2_OPTIONS = {
+  algorithm: Algorithm.Argon2id,
+  memoryCost: 19_456,
+  timeCost: 2,
+  parallelism: 1,
+} as const;
+
+/**
+ * argon2id via @node-rs/argon2 (prebuilt binaries, no node-gyp). The signed-off
+ * production default (ADR-0007 §5.1 Q2). The encoded hash carries its own
+ * params, so verify reads them from the stored value.
+ */
+export class Argon2idPasswordHasher implements PasswordHasher {
+  async hash(plain: string): Promise<string> {
+    return argon2Hash(plain, ARGON2_OPTIONS);
+  }
+
+  async verify(plain: string, stored: string): Promise<boolean> {
+    try {
+      return await argon2Verify(stored, plain);
+    } catch {
+      return false;
+    }
   }
 }

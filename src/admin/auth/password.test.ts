@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { OWASP_SCRYPT_PARAMS, ScryptPasswordHasher } from './password.js';
+import {
+  Argon2idPasswordHasher,
+  OWASP_SCRYPT_PARAMS,
+  ScryptPasswordHasher,
+} from './password.js';
 
 // Fast params keep the suite snappy; cost itself isn't what's under test.
 const hasher = new ScryptPasswordHasher({ N: 16384, r: 8, p: 1 });
@@ -50,5 +54,24 @@ describe('ScryptPasswordHasher', () => {
     const a = await hasher.hash('same');
     const b = await hasher.hash('same');
     expect(a).not.toBe(b);
+  });
+});
+
+describe('Argon2idPasswordHasher', () => {
+  const argon = new Argon2idPasswordHasher();
+
+  it('produces an argon2id-encoded hash and verifies it', async () => {
+    const hash = await argon.hash('correct-passphrase-1');
+    expect(hash.startsWith('$argon2id$')).toBe(true);
+    expect(await argon.verify('correct-passphrase-1', hash)).toBe(true);
+  });
+
+  it('rejects the wrong password', async () => {
+    const hash = await argon.hash('correct-passphrase-1');
+    expect(await argon.verify('wrong', hash)).toBe(false);
+  });
+
+  it('rejects a malformed stored value instead of throwing', async () => {
+    expect(await argon.verify('pw', 'not-an-argon-hash')).toBe(false);
   });
 });
