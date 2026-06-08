@@ -62,4 +62,14 @@ describe('SqliteOperatorStore', () => {
     expect(await store.getById('nope')).toBeUndefined();
     expect(await store.getByUsername('nope')).toBeUndefined();
   });
+
+  it('createFirst inserts only when the table is empty', async () => {
+    expect(await store.createFirst(newOperator())).toBe(true);
+    expect(
+      await store.createFirst(newOperator({ id: 'op_2', username: 'second' })),
+    ).toBe(false);
+    expect(await store.count()).toBe(1);
+    expect(await store.getByUsername('admin')).toBeDefined();
+    expect(await store.getByUsername('second')).toBeUndefined();
+  });
 });

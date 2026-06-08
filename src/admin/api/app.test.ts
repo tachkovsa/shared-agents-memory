@@ -18,7 +18,7 @@ beforeEach(async () => {
   const sessions = new SessionService({
     operators,
     sessions: new SqliteSessionStore(db),
-    hasher: new ScryptPasswordHasher(),
+    hasher: new ScryptPasswordHasher({ N: 16384, r: 8, p: 1 }),
   });
   app = await createAdminApp({ sessions, operators, cookieSecure: false });
   await app.ready();

@@ -14,7 +14,7 @@ function makeService(opts: { idleMs?: number; absoluteMs?: number } = {}): Sessi
   return new SessionService({
     operators: new SqliteOperatorStore(db),
     sessions: new SqliteSessionStore(db),
-    hasher: new ScryptPasswordHasher(),
+    hasher: new ScryptPasswordHasher({ N: 16384, r: 8, p: 1 }),
     now,
     idleMs: opts.idleMs,
     absoluteMs: opts.absoluteMs,
@@ -123,7 +123,7 @@ describe('SessionService — resolveSession', () => {
     const login = await svc.login({ username: 'admin', password: 'password123' });
     if (!login.ok) throw new Error('login failed');
 
-    const principal = await svc.resolveSession(login.session.id);
+    const principal = await svc.resolveSession(login.token);
     expect(principal).not.toBeNull();
     expect(principal?.operatorId).toBe(login.operator.id);
     expect(principal?.role).toBe('owner');
@@ -137,9 +137,9 @@ describe('SessionService — resolveSession', () => {
     if (!login.ok) throw new Error('login failed');
 
     clock = new Date(clock.getTime() + 2000);
-    expect(await svc.resolveSession(login.session.id)).toBeNull();
+    expect(await svc.resolveSession(login.token)).toBeNull();
     // second resolve confirms the row was purged
-    expect(await svc.resolveSession(login.session.id)).toBeNull();
+    expect(await svc.resolveSession(login.token)).toBeNull();
   });
 
   it('slides the idle window forward on each resolve', async () => {
@@ -149,10 +149,10 @@ describe('SessionService — resolveSession', () => {
     if (!login.ok) throw new Error('login failed');
 
     clock = new Date(clock.getTime() + 500);
-    expect(await svc.resolveSession(login.session.id)).not.toBeNull();
+    expect(await svc.resolveSession(login.token)).not.toBeNull();
     // would be dead under the original 1000ms idle, but the resolve at +500 extended it
     clock = new Date(clock.getTime() + 900);
-    expect(await svc.resolveSession(login.session.id)).not.toBeNull();
+    expect(await svc.resolveSession(login.token)).not.toBeNull();
   });
 
   it('returns null after logout', async () => {
@@ -162,6 +162,6 @@ describe('SessionService — resolveSession', () => {
     if (!login.ok) throw new Error('login failed');
 
     await svc.logout(login.session.id);
-    expect(await svc.resolveSession(login.session.id)).toBeNull();
+    expect(await svc.resolveSession(login.token)).toBeNull();
   });
 });

@@ -43,6 +43,12 @@ export interface OperatorSession {
 
 export interface OperatorRepository {
   create(operator: NewOperator): Promise<void>;
+  /**
+   * Atomically create the operator only if none exists yet. Returns false if
+   * an operator already existed (the insert is skipped). Closes the setup
+   * TOCTOU window — count-check and insert happen in one transaction.
+   */
+  createFirst(operator: NewOperator): Promise<boolean>;
   getById(id: string): Promise<Operator | undefined>;
   getByUsername(username: string): Promise<Operator | undefined>;
   count(): Promise<number>;

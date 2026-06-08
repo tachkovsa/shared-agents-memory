@@ -7,6 +7,9 @@ import {
   type OperatorRole,
 } from './types.js';
 
+const INSERT_SQL = `INSERT INTO operators (id, username, password_hash, totp_secret, role, is_disabled, created_at, last_login_at)
+   VALUES (@id, @username, @password_hash, @totp_secret, @role, 0, @created_at, NULL)`;
+
 interface OperatorRow {
   id: string;
   username: string;
@@ -31,30 +34,43 @@ function toOperator(row: OperatorRow): Operator {
   };
 }
 
+function insertParams(operator: NewOperator) {
+  return {
+    id: operator.id,
+    username: operator.username,
+    password_hash: operator.password_hash,
+    totp_secret: operator.totp_secret,
+    role: operator.role,
+    created_at: operator.created_at,
+  };
+}
+
 export class SqliteOperatorStore implements OperatorRepository {
   constructor(private readonly db: Db) {}
 
   async create(operator: NewOperator): Promise<void> {
     try {
-      this.db
-        .prepare(
-          `INSERT INTO operators (id, username, password_hash, totp_secret, role, is_disabled, created_at, last_login_at)
-           VALUES (@id, @username, @password_hash, @totp_secret, @role, 0, @created_at, NULL)`,
-        )
-        .run({
-          id: operator.id,
-          username: operator.username,
-          password_hash: operator.password_hash,
-          totp_secret: operator.totp_secret,
-          role: operator.role,
-          created_at: operator.created_at,
-        });
+      this.db.prepare(INSERT_SQL).run(insertParams(operator));
     } catch (err) {
       if (isUniqueViolation(err)) {
         throw new DuplicateOperatorError(operator.username);
       }
       throw err;
     }
+  }
+
+  async createFirst(operator: NewOperator): Promise<boolean> {
+    const insert = this.db.prepare(INSERT_SQL);
+    const countStmt = this.db.prepare('SELECT COUNT(*) AS n FROM operators');
+    // Synchronous better-sqlite3 transaction: the count-check and insert run
+    // without yielding to other JS, so concurrent setup requests can't race.
+    const tx = this.db.transaction((op: NewOperator): boolean => {
+      const { n } = countStmt.get() as { n: number };
+      if (n > 0) return false;
+      insert.run(insertParams(op));
+      return true;
+    });
+    return tx(operator);
   }
 
   async getById(id: string): Promise<Operator | undefined> {

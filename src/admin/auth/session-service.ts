@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { createId } from '@paralleldrive/cuid2';
 import type {
   NewOperator,
@@ -29,8 +29,14 @@ export interface SessionContext {
   userAgent?: string | null;
 }
 
+/** A fresh session plus the raw cookie token (the DB stores only its hash). */
+export interface IssuedSession {
+  session: OperatorSession;
+  token: string;
+}
+
 export type LoginResult =
-  | { ok: true; operator: Operator; session: OperatorSession }
+  | { ok: true; operator: Operator; session: OperatorSession; token: string }
   | {
       ok: false;
       reason: 'invalid_credentials' | 'disabled' | 'totp_required' | 'totp_invalid';
@@ -40,6 +46,15 @@ function normalizeUsername(username: string): string {
   return username.trim().toLowerCase();
 }
 
+/**
+ * Hash the cookie token before it touches the DB so a read-only database leak
+ * does not hand an attacker live sessions. The token is 256-bit random, so a
+ * plain SHA-256 is preimage-safe here.
+ */
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
 export class SessionService implements AuthProvider {
   private readonly operators: OperatorRepository;
   private readonly sessions: SessionRepository;
@@ -47,6 +62,7 @@ export class SessionService implements AuthProvider {
   private readonly idleMs: number;
   private readonly absoluteMs: number;
   private readonly now: () => Date;
+  private dummyHash: string | null = null;
 
   constructor(opts: SessionServiceOptions) {
     this.operators = opts.operators;
@@ -62,15 +78,12 @@ export class SessionService implements AuthProvider {
     return (await this.operators.count()) === 0;
   }
 
-  /** Create the first operator. Refuses once any operator exists. */
+  /** Create the first operator atomically. Refuses once any operator exists. */
   async createFirstOperator(input: {
     username: string;
     password: string;
     role?: OperatorRole;
   }): Promise<Operator> {
-    if (!(await this.needsSetup())) {
-      throw new SetupClosedError();
-    }
     const operator: NewOperator = {
       id: createId(),
       username: normalizeUsername(input.username),
@@ -79,10 +92,11 @@ export class SessionService implements AuthProvider {
       role: input.role ?? 'owner',
       created_at: this.now().toISOString(),
     };
-    await this.operators.create(operator);
-    const created = await this.operators.getById(operator.id);
-    if (!created) throw new Error('operator vanished after create');
-    return created;
+    const created = await this.operators.createFirst(operator);
+    if (!created) throw new SetupClosedError();
+    const result = await this.operators.getById(operator.id);
+    if (!result) throw new Error('operator vanished after create');
+    return result;
   }
 
   async login(
@@ -93,13 +107,18 @@ export class SessionService implements AuthProvider {
       normalizeUsername(input.username),
     );
     if (!operator) {
+      // Verify against a dummy hash so an unknown user costs the same as a real
+      // one — no timing oracle for username enumeration.
+      await this.hasher.verify(input.password, await this.getDummyHash());
       return { ok: false, reason: 'invalid_credentials' };
-    }
-    if (operator.is_disabled) {
-      return { ok: false, reason: 'disabled' };
     }
     if (!(await this.hasher.verify(input.password, operator.password_hash))) {
       return { ok: false, reason: 'invalid_credentials' };
+    }
+    // Disabled is checked only after a correct password, so a wrong password
+    // can't reveal that an account exists.
+    if (operator.is_disabled) {
+      return { ok: false, reason: 'disabled' };
     }
     if (operator.totp_secret) {
       if (!input.totp) return { ok: false, reason: 'totp_required' };
@@ -108,18 +127,20 @@ export class SessionService implements AuthProvider {
       }
     }
 
-    await this.operators.recordLogin(operator.id, this.now().toISOString());
-    const session = await this.createSession(operator.id, ctx);
-    return { ok: true, operator, session };
+    const ts = this.now().toISOString();
+    await this.operators.recordLogin(operator.id, ts);
+    const { session, token } = await this.createSession(operator.id, ctx);
+    return { ok: true, operator: { ...operator, last_login_at: ts }, session, token };
   }
 
   async createSession(
     operatorId: string,
     ctx: SessionContext = {},
-  ): Promise<OperatorSession> {
+  ): Promise<IssuedSession> {
+    const token = randomBytes(32).toString('hex');
     const nowMs = this.now().getTime();
     const session: OperatorSession = {
-      id: randomBytes(32).toString('hex'),
+      id: hashToken(token),
       operator_id: operatorId,
       created_at: new Date(nowMs).toISOString(),
       absolute_expires_at: new Date(nowMs + this.absoluteMs).toISOString(),
@@ -130,12 +151,13 @@ export class SessionService implements AuthProvider {
       user_agent: ctx.userAgent ?? null,
     };
     await this.sessions.create(session);
-    return session;
+    return { session, token };
   }
 
-  /** AuthProvider: validate a cookie, slide the idle window, return the principal. */
-  async resolveSession(sessionId: string): Promise<Principal | null> {
-    const session = await this.sessions.get(sessionId);
+  /** AuthProvider: validate a cookie token, slide the idle window, return the principal. */
+  async resolveSession(token: string): Promise<Principal | null> {
+    const id = hashToken(token);
+    const session = await this.sessions.get(id);
     if (!session) return null;
 
     const nowMs = this.now().getTime();
@@ -143,13 +165,13 @@ export class SessionService implements AuthProvider {
       Date.parse(session.absolute_expires_at) <= nowMs ||
       Date.parse(session.idle_expires_at) <= nowMs
     ) {
-      await this.sessions.delete(sessionId);
+      await this.sessions.delete(id);
       return null;
     }
 
     const operator = await this.operators.getById(session.operator_id);
     if (!operator || operator.is_disabled) {
-      await this.sessions.delete(sessionId);
+      await this.sessions.delete(id);
       return null;
     }
 
@@ -158,7 +180,7 @@ export class SessionService implements AuthProvider {
       Date.parse(session.absolute_expires_at),
     );
     await this.sessions.touch(
-      sessionId,
+      id,
       new Date(nextIdle).toISOString(),
       new Date(nowMs).toISOString(),
     );
@@ -177,6 +199,13 @@ export class SessionService implements AuthProvider {
 
   async logoutAll(operatorId: string): Promise<void> {
     await this.sessions.deleteByOperator(operatorId);
+  }
+
+  private async getDummyHash(): Promise<string> {
+    if (this.dummyHash === null) {
+      this.dummyHash = await this.hasher.hash('invalid-credentials-placeholder');
+    }
+    return this.dummyHash;
   }
 }
 

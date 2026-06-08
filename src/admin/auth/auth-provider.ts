@@ -12,10 +12,10 @@ export interface Principal {
 }
 
 /**
- * Resolves a session cookie to a Principal. The auth-provider seam (ADR-0009
- * §3.3): OSS binds this to local operator sessions; the SaaS layer can supply
- * an SSO/org-scoped implementation without touching routes.
+ * Resolves a session cookie token to a Principal. The auth-provider seam
+ * (ADR-0009 §3.3): OSS binds this to local operator sessions; the SaaS layer
+ * can supply an SSO/org-scoped implementation without touching routes.
  */
 export interface AuthProvider {
-  resolveSession(sessionId: string): Promise<Principal | null>;
+  resolveSession(token: string): Promise<Principal | null>;
 }

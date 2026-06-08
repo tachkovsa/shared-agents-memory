@@ -71,8 +71,11 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
       }
       throw err;
     }
-    const session = await sessions.createSession(operator.id, sessionContext(req));
-    setSessionCookie(reply, session.id, cookieSecure, session.absolute_expires_at);
+    const { session, token } = await sessions.createSession(
+      operator.id,
+      sessionContext(req),
+    );
+    setSessionCookie(reply, token, cookieSecure, session.absolute_expires_at);
     return reply
       .code(201)
       .send({ operator: publicOperator(operator), csrf_token: session.csrf_token });
@@ -87,7 +90,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
     if (!result.ok) {
       return reply.code(401).send({ error: result.reason });
     }
-    setSessionCookie(reply, result.session.id, cookieSecure, result.session.absolute_expires_at);
+    setSessionCookie(reply, result.token, cookieSecure, result.session.absolute_expires_at);
     return reply.send({
       operator: publicOperator(result.operator),
       csrf_token: result.session.csrf_token,

@@ -20,6 +20,11 @@ export interface AdminAppOptions {
   operators: OperatorRepository;
   /** Send the session cookie with the Secure flag. Default true; tests pass false. */
   cookieSecure?: boolean;
+  /**
+   * Trust X-Forwarded-* so rate-limit keys on the real client IP. Set true only
+   * when behind the known reverse proxy (deploy/); false for direct exposure.
+   */
+  trustProxy?: boolean;
   loginRateLimit?: { max: number; timeWindow: string };
 }
 
@@ -29,7 +34,7 @@ export interface AdminAppOptions {
  * orchestration lives in SessionService.
  */
 export async function createAdminApp(opts: AdminAppOptions): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
+  const app = Fastify({ logger: false, trustProxy: opts.trustProxy ?? false });
 
   await app.register(cookie);
   await app.register(rateLimit, { global: false });
