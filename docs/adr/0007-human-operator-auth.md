@@ -1,7 +1,7 @@
 # ADR-0007: Human (operator) authentication for the admin console
 
-**Status:** Proposed
-**Date:** 2026-06-08
+**Status:** Accepted
+**Date:** 2026-06-08 (signed off 2026-06-08)
 **Authors:** Claude (architect pass), Codex + Kimi review pass
 **Related issues:** #54 (epic), #60 (impl), #56 (this ADR)
 **Depends on:** ADR-0004 (PAT auth), ADR-0009 (open-core boundary)
@@ -80,6 +80,15 @@ An operator session is **not** an `agent_identity`. When the admin API (ADR-0008
 | Q2 | argon2id (`@node-rs/argon2`, native, prebuilt) vs `scrypt` from `node:crypto` (zero new dep)? | argon2id — we already ship a native dep (`better-sqlite3`), and it's the current OWASP first choice. scrypt is the fallback if prebuilt binaries ever bite a self-hoster's platform. |
 | Q3 | Session lifetime defaults (7d idle / 30d absolute)? | Accept as defaults, env-tunable. |
 | Q4 | First-operator bootstrap: stderr setup-token + `/setup` page (§3.4) vs env-seeded `ADMIN_*` credentials? | Setup-token + page — consistent with the PAT bootstrap pattern operators already know; avoids long-lived creds in env. |
+
+### 5.1 Owner sign-off (2026-06-08)
+
+| # | Decision | Notes |
+|---|----------|-------|
+| Q1 | **TOTP opt-in** in v1 | Per recommendation. Strongly recommended in docs; mandatory MFA is a SaaS-tier policy. |
+| Q2 | **argon2id** (`@node-rs/argon2`) | Per recommendation. The scrypt impl stays behind the `PasswordHasher` interface as a zero-dependency fallback. |
+| Q3 | Session lifetimes 7d idle / 30d absolute, env-tunable | Per recommendation. |
+| Q4 | Setup-token + `/setup` page bootstrap | Per recommendation. |
 
 ## 6. Consequences
 

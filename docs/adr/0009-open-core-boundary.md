@@ -1,7 +1,7 @@
 # ADR-0009: Open-core boundary — OSS engine + admin, private SaaS control-plane
 
-**Status:** Proposed
-**Date:** 2026-06-08
+**Status:** Accepted
+**Date:** 2026-06-08 (signed off 2026-06-08)
 **Authors:** Claude (architect pass), Codex + Kimi stack-review pass
 **Related issues:** #54 (epic), #58, #59, #61
 **Depends on:** ADR-0002 (namespace tenancy), ADR-0004 (PAT auth)
@@ -67,6 +67,14 @@ Engine stays permissive (**MIT**, unchanged). The SaaS control-plane is closed b
 | Q1 | Keep engine license MIT, or move to Apache-2.0 (adds an explicit patent grant) before going public? | MIT — lowest friction, already in place; Apache-2.0 is a marginal gain not worth the relicensing pass now. |
 | Q2 | Do the three seam interfaces (§3.3) ship now, or only when the SaaS repo starts consuming them? | Ship the interface + OSS default for repositories and billing now (#61); ship the auth-provider interface as part of ADR-0007. Cheap, and it keeps the boundary honest from day one. |
 | Q3 | Should `data/` SQLite for operators/sessions live in the same volume as engine file-stores, or a separate path? | Same `DATA_DIR` — one backup target, one volume; matches the single-container story. |
+
+### 5.1 Owner sign-off (2026-06-08)
+
+| # | Decision | Notes |
+|---|----------|-------|
+| Q1 | **MIT** (keep) | Per recommendation. Moat is the separate private SaaS repo, not a restrictive license. |
+| Q2 | Ship the three seam interfaces now | Per recommendation. Repository + auth-provider seams already in PR #73; billing-provider stub is #61. |
+| Q3 | SQLite in the same `DATA_DIR` | Per recommendation. |
 
 ## 6. Consequences
 

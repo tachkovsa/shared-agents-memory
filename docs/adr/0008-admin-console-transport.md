@@ -1,7 +1,7 @@
 # ADR-0008: Admin console transport + stack (BFF, SPA, persistence)
 
-**Status:** Proposed
-**Date:** 2026-06-08
+**Status:** Accepted
+**Date:** 2026-06-08 (signed off 2026-06-08)
 **Authors:** Claude (architect pass), Codex + Kimi stack-review pass (Context7-checked: Fastify v5 ESM, shadcn/Tailwind v4, TanStack Query v5, Vite)
 **Related issues:** #54 (epic), #62 (BFF scaffold), #63 (UI shell), #57 (this ADR)
 **Depends on:** ADR-0003 (transports), ADR-0007 (human auth), ADR-0009 (open-core boundary)
@@ -84,8 +84,9 @@ src/
 | # | Decision | Notes |
 |---|----------|-------|
 | Q1 | **Fastify** | Owner: "Fastify на слуху, стоит брать именно его." Hono documented as the runner-up with a revisit trigger (§4). |
-
-(Q2–Q4 awaiting sign-off; author recommendations stand as defaults for scaffolding.)
+| Q2 | **Two listeners + reverse-proxy** | Owner picked the more future-proof option: admin (control plane) stays separable from MCP (data plane) — can later split into its own process/service or bind to a private interface, without touching the tested MCP path. An optional single-port mode may be added later for proxy-less self-hosts. |
+| Q3 | SPA served by Fastify (`@fastify/static`) | Author recommendation accepted as default. |
+| Q4 | `build` = `tsc && vite build`, with `build:server`/`build:web` split | Author recommendation accepted as default. |
 
 ## 6. Consequences
 

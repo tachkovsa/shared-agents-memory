@@ -16,9 +16,9 @@ An Architecture Decision Record (ADR) captures a single significant architectura
 | [0004](0004-auth-pat-v1.md) | Auth: PAT in v1, OAuth/DCR deferred | Accepted |
 | [0005](0005-embeddings-strategy.md) | Embeddings: OpenRouter primary, no local fallback in v1 | Accepted |
 | [0006](0006-memory-lifecycle.md) | Memory lifecycle: dedup, reinforcement, per-namespace decay | Accepted |
-| [0007](0007-human-operator-auth.md) | Human (operator) authentication for the admin console | Proposed |
-| [0008](0008-admin-console-transport.md) | Admin console transport + stack (Fastify, SQLite, Vite SPA) | Proposed |
-| [0009](0009-open-core-boundary.md) | Open-core boundary — OSS engine + admin, private SaaS control-plane | Proposed |
+| [0007](0007-human-operator-auth.md) | Human (operator) authentication for the admin console | Accepted |
+| [0008](0008-admin-console-transport.md) | Admin console transport + stack (Fastify, SQLite, Vite SPA) | Accepted |
+| [0009](0009-open-core-boundary.md) | Open-core boundary — OSS engine + admin, private SaaS control-plane | Accepted |
 
 ## Status values
 
