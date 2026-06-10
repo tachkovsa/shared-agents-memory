@@ -48,7 +48,7 @@ import {
 } from '../metrics/registry.js';
 import { makeOrphanPruneCallback, registerNamespaceTools } from '../namespaces/tools.js';
 import { listNamespaceIds, loadNamespace } from '../namespaces/store.js';
-import { initCollection } from '../qdrant.js';
+import { initCollection, quantizationSearchParams } from '../qdrant.js';
 import { registerRuleTools } from '../rules/index.js';
 import { omitDefaultForbiddenToolExecution } from './codex-compat.js';
 
@@ -206,6 +206,7 @@ function createSession(
     loadDedupThreshold: async (ns) =>
       (await loadNamespace(config.storage.dataDir, ns))?.dedup_threshold ??
       DEDUP_DEFAULT_THRESHOLD,
+    searchParams: quantizationSearchParams(config.qdrant.quantization),
   });
 
   registerMemoryTools(server, {
@@ -268,7 +269,10 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
   const { config, patStore, qdrant } = deps;
   const { http } = config;
 
-  await initCollection(qdrant, config.qdrant.collectionName);
+  await initCollection(qdrant, config.qdrant.collectionName, {
+    dimension: config.embeddings.embeddingDimension,
+    quantization: config.qdrant.quantization,
+  });
 
   const auditor = new AuthAuditWriter({
     path: auditPathForDataDir(config.storage.dataDir),

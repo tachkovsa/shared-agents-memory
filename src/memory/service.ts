@@ -49,6 +49,11 @@ export interface MemoryServiceDeps {
    * default (0.95) is used. Returning 1.0 disables dedup for that namespace.
    */
   loadDedupThreshold?: (namespaceId: string) => Promise<number>;
+  /**
+   * Qdrant search `params` for quantized collections (ADR-0010 §3.4 rescore +
+   * oversampling). Applied to every vector search; omitted when quantization is off.
+   */
+  searchParams?: Record<string, unknown>;
 }
 
 export class MemoryService {
@@ -57,6 +62,7 @@ export class MemoryService {
   private readonly collection: string;
   private readonly now: () => Date;
   private readonly loadDedupThreshold?: (namespaceId: string) => Promise<number>;
+  private readonly searchParams?: Record<string, unknown>;
 
   constructor(deps: MemoryServiceDeps) {
     this.qdrant = deps.qdrant;
@@ -64,6 +70,7 @@ export class MemoryService {
     this.collection = deps.collection;
     this.now = deps.now ?? (() => new Date());
     this.loadDedupThreshold = deps.loadDedupThreshold;
+    this.searchParams = deps.searchParams;
   }
 
   /**
@@ -127,6 +134,7 @@ export class MemoryService {
       limit: input.limit ?? 10,
       filter: { must },
       with_payload: true,
+      ...(this.searchParams ? { params: this.searchParams } : {}),
     });
 
     return results.map((r) => ({
@@ -195,6 +203,7 @@ export class MemoryService {
         ],
       },
       with_payload: true,
+      ...(this.searchParams ? { params: this.searchParams } : {}),
     });
     if (results.length === 0) return null;
     const r = results[0];
