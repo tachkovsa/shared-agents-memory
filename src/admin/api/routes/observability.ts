@@ -58,12 +58,36 @@ export function registerObservabilityRoutes(app: FastifyInstance, deps: Observab
   });
 }
 
-/** Flatten the `mem_*` counters/gauges/histograms into a name→value map for the UI. */
+/** Bound the per-metric series so a high-cardinality label (e.g. per-namespace
+ * gauges) can't grow the response without limit. */
+const MAX_SERIES_PER_METRIC = 100;
+
+/**
+ * Flatten the `mem_*` metrics into a name→{type,values} map for the UI. Each value
+ * keeps its `series` (prom-client `metricName`, e.g. `<base>_bucket/_sum/_count`)
+ * so histogram series stay unambiguous, and the series list is capped so the
+ * payload/cost stays bounded as namespaces grow.
+ */
 async function metricsSummary(): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = {};
   for (const m of await register.getMetricsAsJSON()) {
     if (!m.name.startsWith('mem_')) continue;
-    out[m.name] = m.values.map((v) => ({ labels: v.labels, value: v.value }));
+    const all = m.values ?? [];
+    const values = all.slice(0, MAX_SERIES_PER_METRIC).map((v) => {
+      // prom-client tags histogram/summary sub-series with `metricName`
+      // (e.g. <base>_bucket/_sum/_count) at runtime, though it's absent from the type.
+      const series = (v as { metricName?: string }).metricName;
+      return {
+        labels: v.labels,
+        value: v.value,
+        ...(series && series !== m.name ? { series } : {}),
+      };
+    });
+    out[m.name] = {
+      type: m.type,
+      values,
+      ...(all.length > MAX_SERIES_PER_METRIC ? { truncated: true } : {}),
+    };
   }
   return out;
 }
