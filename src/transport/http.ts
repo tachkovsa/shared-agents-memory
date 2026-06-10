@@ -39,6 +39,7 @@ import {
   ReinforcementBuffer,
   registerMemoryTools,
 } from '../memory/index.js';
+import { StalenessAuditor } from '../lifecycle/staleness.js';
 import {
   authFailuresTotal,
   httpRequestsTotal,
@@ -301,6 +302,14 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
     dataDir: config.storage.dataDir,
   });
   decaySweeper.start();
+
+  // Shared staleness auditor (ADR-0006 §3.6) — one per process, nightly sweep.
+  const stalenessAuditor = new StalenessAuditor({
+    qdrant,
+    collection: config.qdrant.collectionName,
+    dataDir: config.storage.dataDir,
+  });
+  stalenessAuditor.start();
 
   // ── Session table ──────────────────────────────────────────────────────────
 
@@ -709,6 +718,7 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
       clearInterval(patCountRefreshInterval);
       void reinforcement.stop();
       void decaySweeper.stop();
+      void stalenessAuditor.stop();
       for (const [id] of sessions) {
         removeSession(id);
       }
