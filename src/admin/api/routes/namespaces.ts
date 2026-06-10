@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import {
+  isValidNamespaceId,
   listNamespaceIds,
   loadMembers,
   loadNamespace,
@@ -46,6 +47,9 @@ export function registerNamespaceAdminRoutes(
     '/api/admin/namespaces/:id',
     { preHandler: requireAuth },
     async (req, reply) => {
+      if (!isValidNamespaceId(req.params.id)) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
       const ns = await loadNamespace(dataDir, req.params.id);
       if (!ns) {
         return reply.code(404).send({ error: 'not_found' });

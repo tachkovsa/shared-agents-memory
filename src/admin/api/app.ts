@@ -10,10 +10,12 @@ import { AuthAuditWriter, auditPathForDataDir } from '../../auth/audit.js';
 import type { PatStore } from '../../auth/pat-store.js';
 import type { MemoryService } from '../../memory/service.js';
 import { makeOrphanPruneCallback } from '../../namespaces/tools.js';
+import { registerAuditAdminRoutes } from './routes/audit.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerMemoryAdminRoutes } from './routes/memories.js';
 import { registerNamespaceAdminRoutes } from './routes/namespaces.js';
 import { registerPatAdminRoutes } from './routes/pats.js';
+import { registerRuleAdminRoutes } from './routes/rules.js';
 
 export const SESSION_COOKIE = 'sam_admin_session';
 export const CSRF_HEADER = 'x-csrf-token';
@@ -71,6 +73,8 @@ export async function createAdminApp(opts: AdminAppOptions): Promise<FastifyInst
 
   if (opts.dataDir) {
     registerNamespaceAdminRoutes(app, { dataDir: opts.dataDir, requireAuth });
+    registerRuleAdminRoutes(app, { dataDir: opts.dataDir, requireAuth });
+    registerAuditAdminRoutes(app, { dataDir: opts.dataDir, requireAuth });
   }
 
   if (opts.patStore) {
