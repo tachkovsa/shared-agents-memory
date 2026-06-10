@@ -9,6 +9,16 @@ and a GitHub Release via `.github/workflows/release.yml`.
 
 ### Added
 
+- **Configurable embedding dimension + Qdrant int8 quantization** (ADR-0010). New
+  `EMBEDDINGS_DIMENSION` (default **1024**, was a hardcoded 4096) lets a deployment
+  match its embedding model — the self-host CIS profile runs bge-m3 (1024-dim) over
+  the existing OpenAI-compatible path. The Qdrant collection is now created with
+  **int8 scalar quantization** (quantized vectors resident, originals + payload
+  on disk) and searches use rescoring + oversampling — ~4× more vectors per box,
+  near-lossless. Knobs: `QDRANT_QUANTIZATION` (`int8`|`none`), `QDRANT_RESCORE`,
+  `QDRANT_OVERSAMPLING`. `initCollection` validates an existing collection against
+  the configured dimension and fails loud on mismatch.
+
 - **Memory lifecycle: semantic dedup on write + reinforcement counter** (ADR-0006
   §3.2–3.3, #26). `memory.store` now matches new content against the top-1 in the
   namespace and either reinforces (cosine > 0.99), merges near-duplicates

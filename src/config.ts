@@ -2,6 +2,16 @@ import 'dotenv/config';
 
 export type TransportMode = 'stdio' | 'http';
 
+/** Qdrant vector quantization config (ADR-0010 §3.4). */
+export interface QdrantQuantizationConfig {
+  /** `int8` scalar quantization, or `none` to disable. */
+  mode: 'int8' | 'none';
+  /** Re-rank quantized candidates against on-disk originals. */
+  rescore: boolean;
+  /** Fetch this multiple of `limit` candidates before rescoring. */
+  oversampling: number;
+}
+
 export interface HttpTransportConfig {
   bindHost: string;
   bindPort: number;
@@ -32,6 +42,8 @@ export interface Config {
     url: string;
     apiKey?: string;
     collectionName: string;
+    /** Vector quantization for RAM economy (ADR-0010 §3.4). */
+    quantization: QdrantQuantizationConfig;
   };
   server: {
     port: number;
@@ -58,6 +70,13 @@ function parseIntEnv(name: string, defaultValue: number): number {
   if (!raw) return defaultValue;
   const n = parseInt(raw, 10);
   return isNaN(n) ? defaultValue : n;
+}
+
+function parseFloatEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (!raw) return defaultValue;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : defaultValue;
 }
 
 export function loadConfig(): Config {
@@ -122,13 +141,20 @@ export function loadConfig(): Config {
         process.env['EMBEDDINGS_BASE_URL'] ??
         'https://openrouter.ai/api/v1',
       model: process.env['EMBEDDINGS_MODEL'] ?? 'qwen/qwen3-embedding-8b',
-      embeddingDimension: 4096,
+      // ADR-0010 §3.3: provider-driven, configurable. Default 1024 (bge-m3,
+      // self-host profile). Cloud qwen3 deployments set EMBEDDINGS_DIMENSION=4096.
+      embeddingDimension: clampInt(parseIntEnv('EMBEDDINGS_DIMENSION', 1024), 1, 65_536),
     },
     qdrant: {
       url: process.env['QDRANT_URL'] ?? 'http://localhost:6333',
       apiKey: process.env['QDRANT_API_KEY'] || undefined,
       collectionName:
         process.env['QDRANT_COLLECTION'] ?? 'agent_memories',
+      quantization: {
+        mode: process.env['QDRANT_QUANTIZATION'] === 'none' ? 'none' : 'int8',
+        rescore: process.env['QDRANT_RESCORE'] !== 'false',
+        oversampling: parseFloatEnv('QDRANT_OVERSAMPLING', 2.0),
+      },
     },
     server: {
       port: Number(process.env['MCP_SERVER_PORT'] ?? '3000'),

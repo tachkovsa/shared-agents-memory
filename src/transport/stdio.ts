@@ -28,7 +28,7 @@ import {
 } from '../memory/index.js';
 import { loadNamespace } from '../namespaces/store.js';
 import { makeOrphanPruneCallback, registerNamespaceTools } from '../namespaces/tools.js';
-import { initCollection } from '../qdrant.js';
+import { initCollection, quantizationSearchParams } from '../qdrant.js';
 import { registerRuleTools } from '../rules/index.js';
 import { omitDefaultForbiddenToolExecution } from './codex-compat.js';
 
@@ -73,7 +73,10 @@ export async function runStdioTransport(deps: StdioDeps): Promise<void> {
     successSampleRate: resolveSampleRate(process.env),
   });
 
-  await initCollection(qdrant, config.qdrant.collectionName);
+  await initCollection(qdrant, config.qdrant.collectionName, {
+    dimension: config.embeddings.embeddingDimension,
+    quantization: config.qdrant.quantization,
+  });
 
   const server = new McpServer({
     name: 'shared-agents-memory',
@@ -87,6 +90,7 @@ export async function runStdioTransport(deps: StdioDeps): Promise<void> {
     loadDedupThreshold: async (ns) =>
       (await loadNamespace(config.storage.dataDir, ns))?.dedup_threshold ??
       DEDUP_DEFAULT_THRESHOLD,
+    searchParams: quantizationSearchParams(config.qdrant.quantization),
   });
 
   const reinforcement = new ReinforcementBuffer({
