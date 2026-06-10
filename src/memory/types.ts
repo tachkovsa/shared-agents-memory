@@ -139,6 +139,8 @@ export interface UpdateMemoryMetadataInput {
 export interface DeleteMemoryInput {
   namespace: string;
   id: string;
+  /** Allow hard-deleting a soft-deleted (tombstoned) point; default false. */
+  includeDeleted?: boolean;
 }
 
 export const MEMORY_MAX_CONTENT_LENGTH = 32_000;

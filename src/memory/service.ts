@@ -256,7 +256,7 @@ export class MemoryService {
    */
   async list(input: ListMemoryInput): Promise<ListMemoryResult> {
     const limit = Math.min(
-      Math.max(1, input.limit ?? MEMORY_LIST_DEFAULT_LIMIT),
+      Math.max(1, Math.floor(input.limit ?? MEMORY_LIST_DEFAULT_LIMIT)),
       MEMORY_LIST_MAX_LIMIT,
     );
     const result = await this.qdrant.scroll(this.collection, {
@@ -339,7 +339,9 @@ export class MemoryService {
   }
 
   async delete(input: DeleteMemoryInput): Promise<void> {
-    await this.fetchOwned(input.namespace, input.id);
+    // includeDeleted lets the operator console hard-delete (purge) a tombstone it
+    // is showing via include_deleted; the MCP path leaves it false.
+    await this.fetchOwned(input.namespace, input.id, input.includeDeleted ?? false);
     await this.qdrant.delete(this.collection, {
       wait: true,
       points: [input.id],

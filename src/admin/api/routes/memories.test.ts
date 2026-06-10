@@ -166,6 +166,26 @@ describe('admin BFF — memory browser', () => {
     expect((await authGet(`/api/admin/namespaces/${NS}/memories/zzz`, sessionId)).statusCode).toBe(404);
   });
 
+  it('hard-deletes a soft-deleted (tombstoned) memory shown via include_deleted', async () => {
+    await build([mem('a', { deleted_at: '2026-06-05T00:00:00.000Z' })]);
+    const { sessionId, csrf } = await setup();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/admin/namespaces/${NS}/memories/a`,
+      headers: { cookie: `${SESSION_COOKIE}=${sessionId}`, [CSRF_HEADER]: csrf },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().deleted).toBe(true);
+  });
+
+  it('tolerates a fractional limit (floored, no upstream error)', async () => {
+    await build([mem('a'), mem('b')]);
+    const { sessionId } = await setup();
+    const res = await authGet(`/api/admin/namespaces/${NS}/memories?limit=1.5`, sessionId);
+    expect(res.statusCode).toBe(200);
+    expect(res.json().memories).toHaveLength(1);
+  });
+
   it('deletes a memory (CSRF required)', async () => {
     await build([mem('a')]);
     const { sessionId, csrf } = await setup();

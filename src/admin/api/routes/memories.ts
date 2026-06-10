@@ -72,7 +72,12 @@ export function registerMemoryAdminRoutes(
     { preHandler: requireAuth },
     async (req, reply) => {
       try {
-        await memoryService.delete({ namespace: req.params.id, id: req.params.memId });
+        // Operator purge: also removes soft-deleted tombstones the browser shows.
+        await memoryService.delete({
+          namespace: req.params.id,
+          id: req.params.memId,
+          includeDeleted: true,
+        });
         return { deleted: true, id: req.params.memId };
       } catch (err) {
         if (err instanceof MemoryNotFoundError) {
