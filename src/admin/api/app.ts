@@ -7,6 +7,7 @@ import type { SessionService } from '../auth/session-service.js';
 import type { SetupTokenVerifier } from '../auth/setup-token.js';
 import type { OperatorRepository } from '../stores/types.js';
 import { AuthAuditWriter, auditPathForDataDir } from '../../auth/audit.js';
+import type { QdrantClient } from '@qdrant/js-client-rest';
 import type { PatStore } from '../../auth/pat-store.js';
 import type { MemoryService } from '../../memory/service.js';
 import { makeOrphanPruneCallback } from '../../namespaces/tools.js';
@@ -14,6 +15,7 @@ import { registerAuditAdminRoutes } from './routes/audit.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerMemoryAdminRoutes } from './routes/memories.js';
 import { registerNamespaceAdminRoutes } from './routes/namespaces.js';
+import { registerObservabilityRoutes } from './routes/observability.js';
 import { registerPatAdminRoutes } from './routes/pats.js';
 import { registerRuleAdminRoutes } from './routes/rules.js';
 
@@ -47,6 +49,13 @@ export interface AdminAppOptions {
   patStore?: PatStore;
   /** MemoryService over the engine's Qdrant — enables the memory browser routes (needs dataDir). */
   memoryService?: MemoryService;
+  /** Enables the observability summary route (health + counts + metrics); needs dataDir. */
+  observability?: {
+    qdrant: QdrantClient;
+    collection: string;
+    version: string;
+    getBreakerState?: () => string;
+  };
 }
 
 /**
@@ -95,6 +104,15 @@ export async function createAdminApp(opts: AdminAppOptions): Promise<FastifyInst
     registerMemoryAdminRoutes(app, {
       memoryService: opts.memoryService,
       dataDir: opts.dataDir,
+      requireAuth,
+    });
+  }
+
+  if (opts.observability && opts.dataDir) {
+    registerObservabilityRoutes(app, {
+      ...opts.observability,
+      dataDir: opts.dataDir,
+      patStore: opts.patStore,
       requireAuth,
     });
   }
