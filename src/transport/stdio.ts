@@ -33,6 +33,7 @@ import { resolveLifecycle } from '../namespaces/defaults.js';
 import { loadNamespace } from '../namespaces/store.js';
 import { makeOrphanPruneCallback, registerNamespaceTools } from '../namespaces/tools.js';
 import { initCollection, quantizationSearchParams } from '../qdrant.js';
+import { QuotaService } from '../quota/quota-service.js';
 import { registerRuleTools } from '../rules/index.js';
 import { omitDefaultForbiddenToolExecution } from './codex-compat.js';
 
@@ -130,12 +131,26 @@ export async function runStdioTransport(deps: StdioDeps): Promise<void> {
   process.once('SIGINT', stopBackground);
   process.once('beforeExit', stopBackground);
 
+  const quotaService = new QuotaService({ dataDir: config.storage.dataDir });
+
   registerMemoryTools(server, {
     service: memoryService,
     sessionPat,
     auditor,
     dataDir: config.storage.dataDir,
     reinforcement,
+    quota: quotaService,
+    countNamespaceMemories: async (ns: string) => {
+      const result = await qdrant.count(config.qdrant.collectionName, {
+        filter: {
+          must: [
+            { key: 'namespace', match: { value: ns } },
+            { key: 'kind', match: { value: 'episodic' } },
+          ],
+        },
+      });
+      return result.count;
+    },
   });
 
   const sessionId = createId();

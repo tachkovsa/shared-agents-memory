@@ -4,6 +4,9 @@ import type { AuthAuditWriter } from '../auth/audit.js';
 import { AuthError, type RequestContext } from '../auth/request-context.js';
 import { authorizeNamespaceAccess } from '../auth/resolve-request.js';
 import type { AgentPat, AgentScope } from '../auth/types.js';
+import { quotaRejectionsTotal } from '../metrics/registry.js';
+import { loadNamespace } from '../namespaces/store.js';
+import { QuotaExceededError, type QuotaService } from '../quota/quota-service.js';
 import type { ReinforcementBuffer } from './reinforcement.js';
 import { MemoryNotFoundError, MemoryService, MemoryValidationError } from './service.js';
 import { MEMORY_MAX_CONTENT_LENGTH, MEMORY_MAX_TAGS } from './types.js';
@@ -15,6 +18,18 @@ export interface MemoryToolDeps {
   dataDir: string;
   /** Shared reinforcement buffer; get/search hits bump retrieval_count (ADR-0006 §3.3). */
   reinforcement?: ReinforcementBuffer;
+  /**
+   * Optional quota enforcement service (issue #59).
+   * When omitted, quota enforcement is skipped — existing tests that do not
+   * supply this dep continue to pass unchanged.
+   */
+  quota?: QuotaService;
+  /**
+   * Optional helper to count how many memories currently exist in a namespace.
+   * Used by `memory_store` to enforce `max_memories`.  When omitted, the
+   * max_memories limit is not checked (safe default for tests).
+   */
+  countNamespaceMemories?: (namespace: string) => Promise<number>;
 }
 
 interface AuthDecision {
@@ -52,7 +67,7 @@ function validationErrorResponse(err: MemoryValidationError) {
 }
 
 export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): void {
-  const { service, sessionPat, auditor, dataDir, reinforcement } = deps;
+  const { service, sessionPat, auditor, dataDir, reinforcement, quota, countNamespaceMemories } = deps;
 
   async function authorize(
     toolName: string,
@@ -139,7 +154,37 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
       const { ctx, error } = await authorize('memory_store', input.namespace, 'memory:write');
       if (!ctx) return authErrorResponse(error!);
 
+      // ── Quota check (issue #59) ────────────────────────────────────────────
+      if (quota) {
+        const ns = await loadNamespace(dataDir, ctx.namespaceId);
+        const nsQuota = ns?.quota;
+        if (nsQuota) {
+          const estimatedTokens = Math.ceil(input.content.length / 4);
+          const currentCount = countNamespaceMemories
+            ? await countNamespaceMemories(ctx.namespaceId)
+            : undefined;
+          try {
+            await quota.reserve(ctx.namespaceId, 'write', {
+              quota: nsQuota,
+              estimatedTokens,
+              currentCount,
+            });
+          } catch (err) {
+            if (err instanceof QuotaExceededError) {
+              quotaRejectionsTotal.inc({ limit: err.limit });
+              return jsonResponse(
+                { error: 'quota_exceeded', limit: err.limit, used: err.used, cap: err.cap },
+                true,
+              );
+            }
+            throw err;
+          }
+        }
+      }
+
       try {
+        // Quota already consumed atomically by reserve() above (no separate
+        // post-op record — that split was the check→record TOCTOU).
         const nowIso = new Date().toISOString();
         const { record, outcome, matchedExistingId, supersededIds } = await service.store({
           namespace: ctx.namespaceId,
@@ -164,6 +209,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
               }
             : {}),
         });
+
         return jsonResponse({
           id: record.id,
           outcome,
@@ -206,6 +252,30 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
       const { ctx, error } = await authorize('memory_search', input.namespace, 'memory:read');
       if (!ctx) return authErrorResponse(error!);
 
+      // ── Quota check (issue #59) ────────────────────────────────────────────
+      if (quota) {
+        const ns = await loadNamespace(dataDir, ctx.namespaceId);
+        const nsQuota = ns?.quota;
+        if (nsQuota) {
+          const estimatedTokens = Math.ceil(input.query.length / 4);
+          try {
+            await quota.reserve(ctx.namespaceId, 'search', {
+              quota: nsQuota,
+              estimatedTokens,
+            });
+          } catch (err) {
+            if (err instanceof QuotaExceededError) {
+              quotaRejectionsTotal.inc({ limit: err.limit });
+              return jsonResponse(
+                { error: 'quota_exceeded', limit: err.limit, used: err.used, cap: err.cap },
+                true,
+              );
+            }
+            throw err;
+          }
+        }
+      }
+
       const results = await service.search({
         namespace: ctx.namespaceId,
         query: input.query,
@@ -213,6 +283,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
         tags: input.tags,
         includeSuperseded: input.include_superseded ?? false,
       });
+      // Quota already consumed by reserve() above.
 
       for (const result of results) {
         reinforcement?.record(result.memory.id);

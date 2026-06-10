@@ -27,6 +27,8 @@ const REQUIRED_METRIC_NAMES = [
   'mem_embedding_dimension_mismatches_total',
   // Namespace
   'mem_memory_count',
+  // Quota
+  'mem_quota_rejections_total',
 ];
 
 describe('metrics registry', () => {
