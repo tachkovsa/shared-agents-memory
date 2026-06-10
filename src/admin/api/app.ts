@@ -4,6 +4,7 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { AuthProvider, Principal } from '../auth/auth-provider.js';
 import type { SessionService } from '../auth/session-service.js';
+import type { SetupTokenVerifier } from '../auth/setup-token.js';
 import type { OperatorRepository } from '../stores/types.js';
 import { registerAuthRoutes } from './routes/auth.js';
 
@@ -29,6 +30,8 @@ export interface AdminAppOptions {
   loginRateLimit?: { max: number; timeWindow: string };
   /** Absolute path to the built SPA (dist/admin-public). Omit to skip static serving (tests). */
   staticDir?: string;
+  /** Gate first-operator creation behind a one-time token (ADR-0007 §3.4). Omit to leave /setup open. */
+  setupTokens?: SetupTokenVerifier;
 }
 
 /**
@@ -50,6 +53,7 @@ export async function createAdminApp(opts: AdminAppOptions): Promise<FastifyInst
     requireAuth,
     cookieSecure: opts.cookieSecure ?? true,
     loginRateLimit: opts.loginRateLimit ?? { max: 10, timeWindow: '1 minute' },
+    setupTokens: opts.setupTokens,
   });
 
   if (opts.staticDir) {

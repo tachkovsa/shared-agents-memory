@@ -1,6 +1,6 @@
 {
   "name": "shared-agents-memory",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Shared agent memory MCP service backed by Qdrant and OpenRouter embeddings",
   "type": "module",
   "engines": {

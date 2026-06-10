@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { SessionService, SetupClosedError } from '../../auth/session-service.js';
+import type { SetupTokenVerifier } from '../../auth/setup-token.js';
 import { loginSchema, setupSchema } from '../../shared/schemas.js';
 import type { Operator, OperatorRepository } from '../../stores/types.js';
 import { SESSION_COOKIE, type PreHandler } from '../app.js';
@@ -10,6 +11,7 @@ export interface AuthRouteDeps {
   requireAuth: PreHandler;
   cookieSecure: boolean;
   loginRateLimit: { max: number; timeWindow: string };
+  setupTokens?: SetupTokenVerifier;
 }
 
 interface PublicOperator {
@@ -50,7 +52,7 @@ function setSessionCookie(
 }
 
 export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): void {
-  const { sessions, operators, requireAuth, cookieSecure, loginRateLimit } = deps;
+  const { sessions, operators, requireAuth, cookieSecure, loginRateLimit, setupTokens } = deps;
   const rl = { config: { rateLimit: loginRateLimit } };
 
   app.get('/api/admin/setup/status', async () => ({
@@ -62,6 +64,12 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
     if (!parsed.success) {
       return reply.code(400).send({ error: 'invalid_input', issues: parsed.error.issues });
     }
+    if (setupTokens) {
+      const token = parsed.data.setup_token;
+      if (!token || !(await setupTokens.verify(token))) {
+        return reply.code(403).send({ error: 'invalid_setup_token' });
+      }
+    }
     let operator: Operator;
     try {
       operator = await sessions.createFirstOperator(parsed.data);
@@ -70,6 +78,9 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
         return reply.code(409).send({ error: 'setup_closed' });
       }
       throw err;
+    }
+    if (setupTokens) {
+      await setupTokens.consume();
     }
     const { session, token } = await sessions.createSession(
       operator.id,

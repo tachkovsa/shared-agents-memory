@@ -149,6 +149,64 @@ describe('admin auth routes', () => {
   });
 });
 
+describe('admin setup-token gate', () => {
+  const TOKEN = 'sam_setup_test-token';
+  let gatedDb: Db;
+  let gatedApp: FastifyInstance;
+  let consumed: boolean;
+
+  beforeEach(async () => {
+    consumed = false;
+    gatedDb = openDb(':memory:');
+    gatedApp = await createAdminApp({
+      sessions: makeSessions(gatedDb),
+      operators: new SqliteOperatorStore(gatedDb),
+      cookieSecure: false,
+      setupTokens: {
+        verify: async (t) => t === TOKEN && !consumed,
+        consume: async () => {
+          consumed = true;
+        },
+      },
+    });
+    await gatedApp.ready();
+  });
+
+  afterEach(async () => {
+    await gatedApp.close();
+    gatedDb.close();
+  });
+
+  it('rejects setup without a token', async () => {
+    const res = await gatedApp.inject({
+      method: 'POST',
+      url: '/api/admin/setup',
+      payload: { username: 'admin', password: 'password123' },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toEqual({ error: 'invalid_setup_token' });
+  });
+
+  it('rejects a wrong token', async () => {
+    const res = await gatedApp.inject({
+      method: 'POST',
+      url: '/api/admin/setup',
+      payload: { username: 'admin', password: 'password123', setup_token: 'nope' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('creates the operator with the correct token and consumes it', async () => {
+    const res = await gatedApp.inject({
+      method: 'POST',
+      url: '/api/admin/setup',
+      payload: { username: 'admin', password: 'password123', setup_token: TOKEN },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(consumed).toBe(true);
+  });
+});
+
 describe('admin SPA static serving', () => {
   let staticDb: Db;
   let staticApp: FastifyInstance;
