@@ -21,6 +21,12 @@ export interface Namespace {
   owner_agent_id: string;
   visibility: NamespaceVisibility;
   retention_policy: RetentionPolicy;
+  /**
+   * Semantic dedup threshold for memory.store (ADR-0006 §3.2). Range [0.85, 0.99];
+   * 1.0 disables dedup. Optional for forward-compat with pre-#26 namespace files —
+   * absence resolves to DEFAULT_DEDUP_THRESHOLD.
+   */
+  dedup_threshold?: number;
   quota: NamespaceQuota;
   created_at: string;
   updated_at: string;

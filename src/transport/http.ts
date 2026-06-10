@@ -31,7 +31,12 @@ import {
 import type { AgentPat } from '../auth/types.js';
 import type { Config } from '../config.js';
 import { EmbeddingClient } from '../embeddings.js';
-import { MemoryService, registerMemoryTools } from '../memory/index.js';
+import {
+  DEDUP_DEFAULT_THRESHOLD,
+  MemoryService,
+  ReinforcementBuffer,
+  registerMemoryTools,
+} from '../memory/index.js';
 import {
   authFailuresTotal,
   httpRequestsTotal,
@@ -42,7 +47,7 @@ import {
   patLookupsTotal,
 } from '../metrics/registry.js';
 import { makeOrphanPruneCallback, registerNamespaceTools } from '../namespaces/tools.js';
-import { listNamespaceIds } from '../namespaces/store.js';
+import { listNamespaceIds, loadNamespace } from '../namespaces/store.js';
 import { initCollection } from '../qdrant.js';
 import { registerRuleTools } from '../rules/index.js';
 import { omitDefaultForbiddenToolExecution } from './codex-compat.js';
@@ -174,6 +179,7 @@ function createSession(
   pat: AgentPat,
   deps: HttpTransportDeps,
   auditor: AuthAuditWriter,
+  reinforcement: ReinforcementBuffer,
   onSessionClosed: (sessionId: string) => void,
 ): SessionRecord {
   const { config, patStore, pepper, qdrant, embeddings } = deps;
@@ -197,6 +203,9 @@ function createSession(
     qdrant,
     embeddings,
     collection: config.qdrant.collectionName,
+    loadDedupThreshold: async (ns) =>
+      (await loadNamespace(config.storage.dataDir, ns))?.dedup_threshold ??
+      DEDUP_DEFAULT_THRESHOLD,
   });
 
   registerMemoryTools(server, {
@@ -204,6 +213,7 @@ function createSession(
     sessionPat: pat,
     auditor,
     dataDir: config.storage.dataDir,
+    reinforcement,
   });
 
   const mcpSessionId = createId();
@@ -264,6 +274,13 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
     path: auditPathForDataDir(config.storage.dataDir),
     successSampleRate: resolveSampleRate(process.env),
   });
+
+  // Shared reinforcement buffer (ADR-0006 §3.3) — one per process, not per session.
+  const reinforcement = new ReinforcementBuffer({
+    qdrant,
+    collection: config.qdrant.collectionName,
+  });
+  reinforcement.start();
 
   // ── Session table ──────────────────────────────────────────────────────────
 
@@ -578,6 +595,7 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
       pat,
       deps,
       auditor,
+      reinforcement,
       (id) => {
         removeSession(id);
       },
@@ -669,6 +687,7 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
       clearInterval(keepaliveInterval);
       clearInterval(memCountRefreshInterval);
       clearInterval(patCountRefreshInterval);
+      void reinforcement.stop();
       for (const [id] of sessions) {
         removeSession(id);
       }

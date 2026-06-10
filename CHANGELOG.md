@@ -5,6 +5,21 @@ All notable changes are documented here. The format loosely follows
 semantic-version git tags (`vX.Y.Z`); pushing a tag builds the versioned image
 and a GitHub Release via `.github/workflows/release.yml`.
 
+## [Unreleased]
+
+### Added
+
+- **Memory lifecycle: semantic dedup on write + reinforcement counter** (ADR-0006
+  §3.2–3.3, #26). `memory.store` now matches new content against the top-1 in the
+  namespace and either reinforces (cosine > 0.99), merges near-duplicates
+  (threshold < cosine ≤ 0.99; unions tags, appends `metadata.dedup_history`,
+  capped at 5), or inserts. The response gains `outcome`
+  (`inserted` | `reinforced` | `merged`) and `matched_existing_id`. A
+  caller-supplied `id` bypasses dedup. `memory.get` / `memory.search` hits bump a
+  best-effort `retrieval_count` + `last_retrieved_at`, batched and flushed every
+  60 s. New per-namespace `dedup_threshold` (default 0.95, range [0.85, 0.99], 1.0
+  disables) tunable via `namespace.update`.
+
 ## [0.2.0] — 2026-06-08
 
 ### Added
