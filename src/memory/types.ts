@@ -63,6 +63,8 @@ export interface StoreResult {
   outcome: StoreOutcome;
   /** Point ID of the existing memory a reinforce/merge landed on; null on insert. */
   matchedExistingId: string | null;
+  /** ADR-0006 §3.5 — ids actually marked `superseded_by` this new point (insert only). */
+  supersededIds: string[];
 }
 
 export interface StoreMemoryInput {
@@ -76,6 +78,12 @@ export interface StoreMemoryInput {
   id?: string;
   /** ADR-0006 §3.6 — opt-in reference the staleness audit (#28) re-checks. */
   verifiesAgainst?: VerifiesAgainst;
+  /**
+   * ADR-0006 §3.5 — point ids this new memory replaces. On a fresh insert each
+   * existing point in the same namespace gets `superseded_by = <new id>`.
+   * Ids that don't exist or live in another namespace are silently skipped.
+   */
+  supersedes?: string[];
 }
 
 export interface SearchMemoryInput {
@@ -83,9 +91,19 @@ export interface SearchMemoryInput {
   query: string;
   limit?: number;
   tags?: string[];
+  /** ADR-0006 §3.5 — include `superseded_by != null` points (default false). */
+  includeSuperseded?: boolean;
 }
 
 export interface GetMemoryInput {
+  namespace: string;
+  id: string;
+  /** ADR-0006 §3.4 — return a soft-deleted (tombstoned) point (default false). */
+  includeDeleted?: boolean;
+}
+
+/** ADR-0006 §3.4 — restore a soft-deleted memory (clears `deleted_at`). */
+export interface RestoreMemoryInput {
   namespace: string;
   id: string;
 }

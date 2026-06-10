@@ -576,3 +576,206 @@ describe('MemoryService.delete', () => {
     expect(fake.delete).not.toHaveBeenCalled();
   });
 });
+
+// ── ADR-0006 §3.4/§3.5 lifecycle behaviour ───────────────────────────────────
+
+function searchHit(
+  id: string,
+  score: number,
+  over: Partial<Record<string, unknown>> = {},
+): { id: string; score: number; payload: Record<string, unknown> } {
+  return {
+    id,
+    score,
+    payload: {
+      namespace: 'personal',
+      agent_id: 'agent_a',
+      kind: MEMORY_KIND,
+      content: 'c',
+      tags: [],
+      created_at: 'now',
+      updated_at: 'now',
+      decay_score: 1.0,
+      superseded_by: null,
+      deleted_at: null,
+      ...over,
+    },
+  };
+}
+
+describe('MemoryService.search lifecycle filtering + decay re-rank', () => {
+  it('excludes soft-deleted and superseded points by default', async () => {
+    const { client } = makeQdrant({
+      search: vi.fn(async () => [
+        searchHit('live', 0.9),
+        searchHit('deleted', 0.95, { deleted_at: '2026-06-01T00:00:00.000Z' }),
+        searchHit('superseded', 0.99, { superseded_by: 'newer' }),
+      ]),
+    });
+    const service = makeService({ qdrant: client });
+
+    const results = await service.search({ namespace: 'personal', query: 'q' });
+    expect(results.map((r) => r.memory.id)).toEqual(['live']);
+  });
+
+  it('includeSuperseded opts superseded points back in but never tombstones', async () => {
+    const { client } = makeQdrant({
+      search: vi.fn(async () => [
+        searchHit('live', 0.9),
+        searchHit('superseded', 0.8, { superseded_by: 'newer' }),
+        searchHit('deleted', 0.99, { deleted_at: '2026-06-01T00:00:00.000Z' }),
+      ]),
+    });
+    const service = makeService({ qdrant: client });
+
+    const results = await service.search({
+      namespace: 'personal',
+      query: 'q',
+      includeSuperseded: true,
+    });
+    const ids = results.map((r) => r.memory.id).sort();
+    expect(ids).toEqual(['live', 'superseded']);
+  });
+
+  it('re-ranks by decay_score so a fresher decayed point can outrank a stale-but-higher-cosine one', async () => {
+    // cosine 0.8 decay 1.0 → 0.8 ; cosine 0.9 decay 0.5 (w=0.5) → 0.675
+    const { client } = makeQdrant({
+      search: vi.fn(async () => [
+        searchHit('decayed', 0.9, { decay_score: 0.5 }),
+        searchHit('fresh', 0.8, { decay_score: 1.0 }),
+      ]),
+    });
+    const service = makeService({ qdrant: client });
+
+    const results = await service.search({ namespace: 'personal', query: 'q', limit: 2 });
+    expect(results[0].memory.id).toBe('fresh');
+    expect(results[0].score).toBeCloseTo(0.8, 5);
+    expect(results[1].score).toBeCloseTo(0.675, 5);
+  });
+
+  it('uses loadDecayWeight when provided', async () => {
+    const { client } = makeQdrant({
+      search: vi.fn(async () => [searchHit('a', 1.0, { decay_score: 0.5 })]),
+    });
+    const service = new MemoryService({
+      qdrant: client,
+      embeddings: makeEmbeddings(),
+      collection: COLLECTION,
+      loadDecayWeight: async () => 1.0, // full decay weight → score == cosine*decay
+    });
+
+    const results = await service.search({ namespace: 'personal', query: 'q' });
+    expect(results[0].score).toBeCloseTo(0.5, 5);
+  });
+});
+
+describe('MemoryService.get / restore soft-delete', () => {
+  function deletedRetrieve() {
+    return vi.fn(async () => [
+      {
+        id: 'mem-1',
+        payload: {
+          namespace: 'personal',
+          agent_id: 'agent_a',
+          kind: MEMORY_KIND,
+          content: 'hi',
+          tags: [],
+          created_at: 'now',
+          updated_at: 'now',
+          deleted_at: '2026-06-01T00:00:00.000Z',
+        },
+      },
+    ]);
+  }
+
+  it('get() hides soft-deleted points by default', async () => {
+    const { client } = makeQdrant({ retrieve: deletedRetrieve() });
+    const service = makeService({ qdrant: client });
+    await expect(
+      service.get({ namespace: 'personal', id: 'mem-1' }),
+    ).rejects.toBeInstanceOf(MemoryNotFoundError);
+  });
+
+  it('get() with includeDeleted returns the tombstoned point', async () => {
+    const { client } = makeQdrant({ retrieve: deletedRetrieve() });
+    const service = makeService({ qdrant: client });
+    const memory = await service.get({
+      namespace: 'personal',
+      id: 'mem-1',
+      includeDeleted: true,
+    });
+    expect(memory.deletedAt).toBe('2026-06-01T00:00:00.000Z');
+  });
+
+  it('restore() clears the tombstone', async () => {
+    const { client, fake } = makeQdrant({ retrieve: deletedRetrieve() });
+    const service = makeService({ qdrant: client });
+
+    const restored = await service.restore({ namespace: 'personal', id: 'mem-1' });
+    expect(restored.deletedAt).toBeNull();
+    const [, body] = fake.setPayload.mock.calls[0] as [
+      string,
+      { payload: { deleted_at: null } },
+    ];
+    expect(body.payload.deleted_at).toBeNull();
+  });
+
+  it('restore() is idempotent on a live point (no setPayload)', async () => {
+    const { client, fake } = makeQdrant({
+      retrieve: vi.fn(async () => [
+        {
+          id: 'mem-1',
+          payload: {
+            namespace: 'personal',
+            agent_id: 'agent_a',
+            kind: MEMORY_KIND,
+            content: 'hi',
+            tags: [],
+            created_at: 'now',
+            updated_at: 'now',
+            deleted_at: null,
+          },
+        },
+      ]),
+    });
+    const service = makeService({ qdrant: client });
+
+    const restored = await service.restore({ namespace: 'personal', id: 'mem-1' });
+    expect(restored.deletedAt).toBeNull();
+    expect(fake.setPayload).not.toHaveBeenCalled();
+  });
+});
+
+describe('MemoryService.store supersedes', () => {
+  it('marks existing same-namespace targets with superseded_by and returns their ids', async () => {
+    const { client, fake } = makeQdrant({
+      search: vi.fn(async () => []), // no dedup match → insert
+      retrieve: vi.fn(async () => [
+        {
+          id: 'old-1',
+          payload: { namespace: 'personal', agent_id: 'a', kind: MEMORY_KIND },
+        },
+        {
+          id: 'old-2',
+          payload: { namespace: 'other', agent_id: 'a', kind: MEMORY_KIND },
+        },
+      ]),
+    });
+    const service = makeService({ qdrant: client });
+
+    const result = await service.store({
+      namespace: 'personal',
+      agentId: 'agent_a',
+      content: 'new fact',
+      supersedes: ['old-1', 'old-2'],
+    });
+
+    expect(result.outcome).toBe('inserted');
+    expect(result.supersededIds).toEqual(['old-1']); // old-2 is cross-namespace → skipped
+    const supersedeCall = fake.setPayload.mock.calls.find(
+      (c) => (c[1] as { payload: Record<string, unknown> }).payload['superseded_by'],
+    ) as [string, { payload: { superseded_by: string }; points: string[] }] | undefined;
+    expect(supersedeCall?.[1].payload.superseded_by).toBe(result.record.id);
+    expect(supersedeCall?.[1].points).toEqual(['old-1']);
+  });
+});
