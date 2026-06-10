@@ -63,6 +63,45 @@ const dedupThresholdSchema = z
   )
   .describe('Semantic dedup threshold (ADR-0006 §3.2); [0.85, 0.99] or 1.0 to disable');
 
+const lifecycleSchema = z
+  .object({
+    decay_weight: z
+      .number()
+      .min(0)
+      .max(1)
+      .optional()
+      .describe('Blend of cosine vs decay at search re-rank, [0,1] (ADR-0006 §3.4)'),
+    soft_delete_after_days: z
+      .number()
+      .int()
+      .positive()
+      .nullable()
+      .optional()
+      .describe('Days untouched before an unretrieved point is soft-deleted; null = rank-only (§3.4)'),
+    hard_delete_grace_days: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Days a soft-deleted point is kept before physical removal (§3.4)'),
+    staleness_audit_enabled: z
+      .boolean()
+      .optional()
+      .describe('Whether the nightly staleness audit sweeps this namespace (§3.6)'),
+    staleness_audit_batch_size: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Max points the staleness audit checks per sweep (§3.6)'),
+    filesystem_audit_root: z
+      .string()
+      .nullable()
+      .optional()
+      .describe('Read-only repo root for verifies_against.kind=file audits; null disables (§3.6)'),
+  })
+  .describe('Lifecycle policy override for this namespace (ADR-0006 §3.4/§3.6)');
+
 const quotaSchema = z
   .object({
     daily_embedding_tokens: z.number().int().positive().optional().describe('Daily embedding token budget (default 1_000_000)'),
@@ -408,12 +447,15 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
   // --------------------------------------------------------------------------
   server.tool(
     'namespace_update',
-    'Update namespace display_name, retention_policy, dedup_threshold, or quota. Requires namespace:admin on the target namespace.',
+    'Update namespace display_name, retention_policy, dedup_threshold, lifecycle policy, or quota. Requires namespace:admin on the target namespace.',
     {
       id: namespaceIdSchema,
       display_name: z.string().min(1).optional().describe('New display name'),
       retention_policy: retentionSchema.optional(),
       dedup_threshold: dedupThresholdSchema.optional(),
+      lifecycle: lifecycleSchema
+        .optional()
+        .describe('Lifecycle fields to merge with existing policy (ADR-0006 §3.4/§3.6)'),
       quota: quotaSchema.optional().describe('Quota fields to merge with existing quota'),
     },
     async (input) => {
@@ -423,11 +465,29 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
       const ns = await loadNamespace(dataDir, input.id);
       if (!ns) return notFoundResponse(input.id);
 
+      const lc = input.lifecycle;
       const updated = {
         ...ns,
         display_name: input.display_name ?? ns.display_name,
         retention_policy: input.retention_policy ?? ns.retention_policy,
         dedup_threshold: input.dedup_threshold ?? ns.dedup_threshold,
+        // Lifecycle merge: each field overrides only when supplied. `null` is a
+        // meaningful value for soft_delete_after_days/filesystem_audit_root, so
+        // distinguish undefined (leave) from null (clear).
+        decay_weight: lc?.decay_weight ?? ns.decay_weight,
+        soft_delete_after_days:
+          lc?.soft_delete_after_days !== undefined
+            ? lc.soft_delete_after_days
+            : ns.soft_delete_after_days,
+        hard_delete_grace_days: lc?.hard_delete_grace_days ?? ns.hard_delete_grace_days,
+        staleness_audit_enabled:
+          lc?.staleness_audit_enabled ?? ns.staleness_audit_enabled,
+        staleness_audit_batch_size:
+          lc?.staleness_audit_batch_size ?? ns.staleness_audit_batch_size,
+        filesystem_audit_root:
+          lc?.filesystem_audit_root !== undefined
+            ? lc.filesystem_audit_root
+            : ns.filesystem_audit_root,
         quota: input.quota
           ? {
               daily_embedding_tokens:
@@ -448,6 +508,14 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
         display_name: updated.display_name,
         retention_policy: updated.retention_policy,
         dedup_threshold: updated.dedup_threshold,
+        lifecycle: {
+          decay_weight: updated.decay_weight,
+          soft_delete_after_days: updated.soft_delete_after_days,
+          hard_delete_grace_days: updated.hard_delete_grace_days,
+          staleness_audit_enabled: updated.staleness_audit_enabled,
+          staleness_audit_batch_size: updated.staleness_audit_batch_size,
+          filesystem_audit_root: updated.filesystem_audit_root,
+        },
         quota: updated.quota,
         updated_at: updated.updated_at,
       });

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { QdrantClient } from '@qdrant/js-client-rest';
 import type { EmbeddingClient } from '../embeddings.js';
 import {
+  DECAY_DEFAULT_SCORE,
   DEDUP_DEFAULT_THRESHOLD,
   DEDUP_DISABLED_THRESHOLD,
   DEDUP_HISTORY_CAP,
@@ -14,9 +15,11 @@ import {
   type MemoryRecord,
   type SearchMemoryInput,
   type SearchResult,
+  type StalenessSignal,
   type StoreMemoryInput,
   type StoreResult,
   type UpdateMemoryMetadataInput,
+  type VerifiesAgainst,
 } from './types.js';
 
 export class MemoryValidationError extends Error {
@@ -279,6 +282,12 @@ export class MemoryService {
       updatedAt: nowIso,
       retrievalCount: 0,
       lastRetrievedAt: null,
+      // ADR-0006 §3.1 lifecycle defaults (locked by #27 foundation).
+      decayScore: DECAY_DEFAULT_SCORE,
+      supersededBy: null,
+      deletedAt: null,
+      stalenessSignal: 'unverified',
+      verifiesAgainst: input.verifiesAgainst ?? null,
     };
   }
 
@@ -341,7 +350,40 @@ export function memoryToPayload(memory: MemoryRecord): Record<string, unknown> {
     updated_at: memory.updatedAt,
     retrieval_count: memory.retrievalCount ?? 0,
     last_retrieved_at: memory.lastRetrievedAt ?? null,
+    // ADR-0006 §3.1 lifecycle fields.
+    decay_score: memory.decayScore ?? DECAY_DEFAULT_SCORE,
+    superseded_by: memory.supersededBy ?? null,
+    deleted_at: memory.deletedAt ?? null,
+    staleness_signal: memory.stalenessSignal ?? 'unverified',
+    verifies_against: verifiesAgainstToPayload(memory.verifiesAgainst),
     ...(memory.expiresAt ? { expires_at: memory.expiresAt } : {}),
+  };
+}
+
+function verifiesAgainstToPayload(
+  v: VerifiesAgainst | null | undefined,
+): Record<string, unknown> | null {
+  if (!v) return null;
+  return {
+    kind: v.kind,
+    ref: v.ref,
+    captured_at: v.capturedAt,
+    ...(v.lastKnownValue !== undefined ? { last_known_value: v.lastKnownValue } : {}),
+  };
+}
+
+function payloadToVerifiesAgainst(raw: unknown): VerifiesAgainst | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const kind = r['kind'];
+  if (kind !== 'file' && kind !== 'url' && kind !== 'git_commit') return null;
+  return {
+    kind,
+    ref: String(r['ref'] ?? ''),
+    capturedAt: String(r['captured_at'] ?? ''),
+    ...(typeof r['last_known_value'] === 'string'
+      ? { lastKnownValue: r['last_known_value'] }
+      : {}),
   };
 }
 
@@ -364,5 +406,11 @@ export function payloadToMemory(
     expiresAt: (payload['expires_at'] as string) || undefined,
     retrievalCount: (payload['retrieval_count'] as number) ?? 0,
     lastRetrievedAt: (payload['last_retrieved_at'] as string | null) ?? null,
+    // ADR-0006 §3.1 lifecycle fields — default for pre-#27 points.
+    decayScore: (payload['decay_score'] as number) ?? DECAY_DEFAULT_SCORE,
+    supersededBy: (payload['superseded_by'] as string | null) ?? null,
+    deletedAt: (payload['deleted_at'] as string | null) ?? null,
+    stalenessSignal: ((payload['staleness_signal'] as StalenessSignal) ?? 'unverified'),
+    verifiesAgainst: payloadToVerifiesAgainst(payload['verifies_against']),
   };
 }

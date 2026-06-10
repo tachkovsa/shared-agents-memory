@@ -4,6 +4,7 @@ import { createId } from '@paralleldrive/cuid2';
 import type { AgentScope } from '../auth/types.js';
 import {
   DEFAULT_DEDUP_THRESHOLD,
+  DEFAULT_LIFECYCLE,
   DEFAULT_RETENTION,
   DEFAULT_RULES_INDEX_BODY,
   getDefaultQuota,
@@ -74,6 +75,9 @@ export async function createNamespaceSkeleton(
     visibility: 'private',
     retention_policy: spec.retention_policy ?? DEFAULT_RETENTION,
     dedup_threshold: spec.dedup_threshold ?? DEFAULT_DEDUP_THRESHOLD,
+    // ADR-0006 §3.4/§3.6 lifecycle config — written explicitly so new namespace
+    // files carry the full shape (#27 foundation).
+    ...DEFAULT_LIFECYCLE,
     quota: spec.quota ?? getDefaultQuota(spec.env),
     created_at: now,
     updated_at: now,
