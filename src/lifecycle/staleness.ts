@@ -39,6 +39,16 @@ function isInside(target: string, root: string): boolean {
   return target === root || target.startsWith(root + sep);
 }
 
+/**
+ * Conservative guard for a writer-supplied git commit-ish before it reaches
+ * `git`. Accepts SHAs and ordinary branch/tag names; rejects anything that
+ * could be read as an option (leading '-') or shell/path trickery. Paired with
+ * `--end-of-options` at the call site (defence in depth).
+ */
+function isSafeGitRef(ref: string): boolean {
+  return /^[0-9a-zA-Z][0-9a-zA-Z._/-]*$/.test(ref) && !ref.includes('..');
+}
+
 // ── Checker interface ─────────────────────────────────────────────────────────
 
 /**
@@ -128,6 +138,11 @@ export const defaultStalenessCheckers: StalenessCheckers = {
   },
 
   async gitCommit(ref, root) {
+    // `ref` is writer-controlled — reject anything that could be read as a git
+    // option (e.g. "--upload-pack=...") before it reaches execFile. We also pass
+    // `--end-of-options` so git never interprets it as a flag (git >= 2.24).
+    if (!isSafeGitRef(ref)) return null;
+
     // Check if the commit is an ancestor of HEAD but not HEAD itself → stale.
     // - `git merge-base --is-ancestor <ref> HEAD` exits 0 if ref is ancestor, 1 if not.
     // - If they are equal (ref IS HEAD) we treat as fresh.
@@ -135,13 +150,27 @@ export const defaultStalenessCheckers: StalenessCheckers = {
       // First, check if they are the same commit.
       const { stdout: headOut } = await execFileAsync('git', ['-C', root, 'rev-parse', 'HEAD']);
       const head = headOut.trim();
-      const { stdout: refOut } = await execFileAsync('git', ['-C', root, 'rev-parse', ref]);
+      const { stdout: refOut } = await execFileAsync('git', [
+        '-C',
+        root,
+        'rev-parse',
+        '--end-of-options',
+        ref,
+      ]);
       const refResolved = refOut.trim();
       if (head === refResolved) return 'fresh';
 
       // Is ref an ancestor of HEAD?
       try {
-        await execFileAsync('git', ['-C', root, 'merge-base', '--is-ancestor', ref, 'HEAD']);
+        await execFileAsync('git', [
+          '-C',
+          root,
+          'merge-base',
+          '--is-ancestor',
+          '--end-of-options',
+          ref,
+          'HEAD',
+        ]);
         // Exit 0 → ref is ancestor of HEAD → HEAD has moved past it → stale.
         return 'stale';
       } catch {

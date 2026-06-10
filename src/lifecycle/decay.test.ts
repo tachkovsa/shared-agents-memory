@@ -129,6 +129,23 @@ describe('DecaySweeper.runOnce', () => {
     expect(body.points).toEqual(['p1']);
   });
 
+  it('clamps decay_score to 1.0 for a future-dated created_at (clock skew)', async () => {
+    await makeNamespace('ns', { retention: 'decay-90d' });
+    // created_at 30 days in the FUTURE → daysSince negative → 0.5**neg > 1.
+    const created = new Date(NOW.getTime() + 30 * 86_400_000).toISOString();
+    const { client, fake } = makeQdrant([
+      { id: 'p1', payload: payload({ created_at: created }) },
+    ]);
+
+    await makeSweeper(client).runOnce();
+
+    const [, body] = fake.setPayload.mock.calls[0] as [
+      string,
+      { payload: { decay_score: number } },
+    ];
+    expect(body.payload.decay_score).toBe(1);
+  });
+
   it('floors decay at 0.5 for points that have ever been retrieved', async () => {
     await makeNamespace('ns', { retention: 'decay-90d' });
     // 360 days old → raw decay = 0.5**4 = 0.0625, but retrieval_count>0 floors at 0.5.
