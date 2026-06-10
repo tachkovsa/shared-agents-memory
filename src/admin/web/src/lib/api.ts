@@ -73,7 +73,11 @@ export const api = {
   async setupStatus(): Promise<{ needs_setup: boolean }> {
     return request('/setup/status');
   },
-  async setup(input: { username: string; password: string }): Promise<SessionResponse> {
+  async setup(input: {
+    username: string;
+    password: string;
+    setup_token: string;
+  }): Promise<SessionResponse> {
     return rememberCsrf(await request<SessionResponse>('/setup', { method: 'POST', body: input }));
   },
   async login(input: {

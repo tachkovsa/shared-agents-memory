@@ -8,6 +8,8 @@ export const passwordSchema = z.string().min(8).max(256);
 export const setupSchema = z.object({
   username: usernameSchema,
   password: passwordSchema,
+  // Required when the server runs the setup-token gate (ADR-0007 §3.4).
+  setup_token: z.string().min(1).optional(),
 });
 
 export const loginSchema = z.object({

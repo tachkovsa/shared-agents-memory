@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { createAdminApp } from './api/app.js';
 import { Argon2idPasswordHasher } from './auth/password.js';
 import { SessionService } from './auth/session-service.js';
+import { FileSetupTokenStore, setupTokenPath } from './auth/setup-token.js';
 import { openDb } from './stores/db.js';
 import { SqliteOperatorStore } from './stores/operator-store.js';
 import { SqliteSessionStore } from './stores/session-store.js';
@@ -36,12 +37,14 @@ export async function startAdminServer(opts: AdminServerOptions): Promise<AdminS
     hasher: new Argon2idPasswordHasher(),
   });
 
+  const setupTokens = new FileSetupTokenStore(setupTokenPath(opts.dataDir));
   const app = await createAdminApp({
     sessions,
     operators,
     cookieSecure: opts.cookieSecure ?? true,
     trustProxy: opts.trustProxy ?? false,
     staticDir: resolveStaticDir(opts.staticDir),
+    setupTokens,
   });
   app.addHook('onClose', () => {
     db.close();
@@ -52,9 +55,8 @@ export async function startAdminServer(opts: AdminServerOptions): Promise<AdminS
   const url = await app.listen({ host, port });
 
   if (await sessions.needsSetup()) {
-    process.stderr.write(
-      `[admin] no operator yet — open the console and create the first one at ${url}\n`,
-    );
+    const token = await setupTokens.ensureToken();
+    printSetupBanner(url, opts.dataDir, token);
   }
 
   return {
@@ -63,6 +65,24 @@ export async function startAdminServer(opts: AdminServerOptions): Promise<AdminS
       await app.close();
     },
   };
+}
+
+function printSetupBanner(url: string, dataDir: string, token: string | null): void {
+  const tokenPath = setupTokenPath(dataDir);
+  if (token) {
+    process.stderr.write(
+      '\n===============================================================\n' +
+        'ADMIN SETUP TOKEN — needed to create the first operator\n\n' +
+        `    ${token}\n\n` +
+        `Also written to: ${tokenPath} (mode 0600).\n` +
+        `Create the first operator at ${url}, then this token is consumed.\n` +
+        '===============================================================\n\n',
+    );
+  } else {
+    process.stderr.write(
+      `[admin] awaiting first-operator setup at ${url} — token in ${tokenPath}\n`,
+    );
+  }
 }
 
 function resolveStaticDir(explicit?: string): string | undefined {

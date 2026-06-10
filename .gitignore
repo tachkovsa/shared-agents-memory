@@ -13,3 +13,6 @@ data/
 # Claude Code per-user state (shared .claude/settings.json stays trackable).
 .claude/settings.local.json
 .claude/worktrees/
+
+# Local scratch — analysis notes, internal strategy. Never committed.
+temp/
