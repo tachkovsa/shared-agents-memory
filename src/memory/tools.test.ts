@@ -184,6 +184,72 @@ describe('memory_store', () => {
     })) as { content: { text: string }[]; isError?: boolean };
     expect(result.isError).toBe(true);
   });
+
+  it('persists verifies_against when provided', async () => {
+    const { client, fake } = await setupHarness();
+
+    const body = parsePayload(
+      (await client.callTool({
+        name: 'memory_store',
+        arguments: {
+          namespace: 'personal',
+          content: 'The Prisma schema is at prisma/schema.prisma',
+          verifies_against: {
+            kind: 'file',
+            ref: 'prisma/schema.prisma',
+            captured_at: '2026-06-10T00:00:00.000Z',
+            last_known_value: 'sha256:abc123',
+          },
+        },
+      })) as never,
+    );
+    expect(body.outcome).toBe('inserted');
+
+    expect(fake.upsert).toHaveBeenCalledTimes(1);
+    const [, upsertBody] = (fake.upsert.mock.calls[0] ?? []) as [
+      string,
+      { points: { payload: Record<string, unknown> }[] },
+    ];
+    const va = upsertBody.points[0].payload['verifies_against'] as Record<string, unknown>;
+    expect(va).toBeDefined();
+    expect(va['kind']).toBe('file');
+    expect(va['ref']).toBe('prisma/schema.prisma');
+    expect(va['captured_at']).toBe('2026-06-10T00:00:00.000Z');
+    expect(va['last_known_value']).toBe('sha256:abc123');
+  });
+
+  it('defaults captured_at to now when verifies_against omits it', async () => {
+    const { client, fake } = await setupHarness();
+
+    const beforeCall = Date.now();
+    parsePayload(
+      (await client.callTool({
+        name: 'memory_store',
+        arguments: {
+          namespace: 'personal',
+          content: 'API URL is https://api.example.com',
+          verifies_against: {
+            kind: 'url',
+            ref: 'https://api.example.com/health',
+            // no captured_at — should default to now
+          },
+        },
+      })) as never,
+    );
+    const afterCall = Date.now();
+
+    expect(fake.upsert).toHaveBeenCalledTimes(1);
+    const [, upsertBody] = (fake.upsert.mock.calls[0] ?? []) as [
+      string,
+      { points: { payload: Record<string, unknown> }[] },
+    ];
+    const va = upsertBody.points[0].payload['verifies_against'] as Record<string, unknown>;
+    expect(va).toBeDefined();
+    // captured_at should be a valid ISO string that falls within the call window.
+    const capturedAt = Date.parse(va['captured_at'] as string);
+    expect(capturedAt).toBeGreaterThanOrEqual(beforeCall);
+    expect(capturedAt).toBeLessThanOrEqual(afterCall + 1000); // 1s tolerance
+  });
 });
 
 describe('memory_search', () => {
@@ -479,5 +545,58 @@ describe('memory_store — quota enforcement', () => {
     expect(result.isError).toBe(true);
     expect(JSON.parse(result.content[0].text).limit).toBe('max_memories');
     expect(fake.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('memory_restore', () => {
+  const ID = '11111111-1111-1111-1111-111111111111';
+
+  it('clears the tombstone on a soft-deleted memory', async () => {
+    const { client, fake } = await setupHarness({}, {
+      retrieve: vi.fn(async () => [
+        {
+          id: ID,
+          payload: {
+            namespace: 'personal',
+            agent_id: 'agent_session',
+            kind: MEMORY_KIND,
+            content: 'hi',
+            tags: [],
+            created_at: 'now',
+            updated_at: 'now',
+            deleted_at: '2026-06-01T00:00:00.000Z',
+          },
+        },
+      ]),
+    });
+
+    const body = parsePayload(
+      (await client.callTool({
+        name: 'memory_restore',
+        arguments: { namespace: 'personal', id: ID },
+      })) as never,
+    );
+    expect(body.id).toBe(ID);
+    expect(body.deletedAt).toBeNull();
+    expect(fake.setPayload).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns not_found if absent', async () => {
+    const { client } = await setupHarness();
+    const result = (await client.callTool({
+      name: 'memory_restore',
+      arguments: { namespace: 'personal', id: ID },
+    })) as { content: { text: string }[]; isError?: boolean };
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text).error).toBe('not_found');
+  });
+
+  it('requires memory:write scope', async () => {
+    const { client } = await setupHarness({ sessionScopes: ['memory:read'] });
+    const result = (await client.callTool({
+      name: 'memory_restore',
+      arguments: { namespace: 'personal', id: ID },
+    })) as { content: { text: string }[]; isError?: boolean };
+    expect(result.isError).toBe(true);
   });
 });

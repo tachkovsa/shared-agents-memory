@@ -160,3 +160,43 @@ export const quotaRejectionsTotal = new Counter({
   labelNames: ['limit'] as const,
   registers: [register],
 });
+
+// ── Staleness audit (ADR-0006 §3.6) ──────────────────────────────────────────
+
+/**
+ * Total staleness audit check outcomes.
+ * result ∈ fresh | stale | broken_ref | skipped
+ *
+ * 'skipped' covers: disabled namespace, no filesystem_audit_root, unreachable
+ * resource, path-traversal rejection, or leave-unchanged result from a checker.
+ */
+export const stalenessAuditTotal = new Counter({
+  name: 'mem_staleness_audit_total',
+  help: 'Total staleness audit check outcomes by result',
+  labelNames: ['result'] as const,
+  registers: [register],
+});
+
+// ── Lifecycle: decay sweep (ADR-0006 §3.4) ───────────────────────────────────
+
+/**
+ * Wall-clock duration of one full decay sweep across all namespaces.
+ * Buckets: 100ms, 500ms, 1s, 5s, 15s, 60s, 300s
+ */
+export const decaySweepDurationSeconds = new Histogram({
+  name: 'mem_decay_sweep_duration_seconds',
+  help: 'Duration of one full per-namespace decay sweep in seconds',
+  buckets: [0.1, 0.5, 1, 5, 15, 60, 300],
+  registers: [register],
+});
+
+/**
+ * Total lifecycle deletions by kind.
+ * kind ∈ soft | hard
+ */
+export const lifecycleDeletesTotal = new Counter({
+  name: 'mem_lifecycle_deletes_total',
+  help: 'Total lifecycle deletions by kind (soft | hard)',
+  labelNames: ['kind'] as const,
+  registers: [register],
+});

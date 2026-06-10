@@ -131,6 +131,24 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
         .uuid()
         .optional()
         .describe('Optional caller-supplied ID for idempotent upsert'),
+      verifies_against: z
+        .object({
+          kind: z.enum(['file', 'url', 'git_commit']),
+          ref: z.string().min(1),
+          captured_at: z.string().datetime().optional(),
+          last_known_value: z.string().optional(),
+        })
+        .optional()
+        .describe(
+          'ADR-0006 §3.6 — opt-in reference the nightly staleness audit re-checks. ' +
+            'kind=file needs filesystem_audit_root on the namespace; ' +
+            'kind=url uses an HTTP HEAD probe; ' +
+            'kind=git_commit checks whether HEAD has moved past the commit.',
+        ),
+      supersedes: z
+        .array(z.string().uuid())
+        .optional()
+        .describe('IDs of existing memories this one replaces (ADR-0006 §3.5)'),
     },
     async (input) => {
       const { ctx, error } = await authorize('memory_store', input.namespace, 'memory:write');
@@ -167,7 +185,8 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
       try {
         // Quota already consumed atomically by reserve() above (no separate
         // post-op record — that split was the check→record TOCTOU).
-        const { record, outcome, matchedExistingId } = await service.store({
+        const nowIso = new Date().toISOString();
+        const { record, outcome, matchedExistingId, supersededIds } = await service.store({
           namespace: ctx.namespaceId,
           agentId: ctx.agentId,
           content: input.content,
@@ -176,12 +195,26 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
           tags: input.tags,
           source: input.source,
           id: input.id,
+          supersedes: input.supersedes,
+          ...(input.verifies_against
+            ? {
+                verifiesAgainst: {
+                  kind: input.verifies_against.kind,
+                  ref: input.verifies_against.ref,
+                  capturedAt: input.verifies_against.captured_at ?? nowIso,
+                  ...(input.verifies_against.last_known_value !== undefined
+                    ? { lastKnownValue: input.verifies_against.last_known_value }
+                    : {}),
+                },
+              }
+            : {}),
         });
 
         return jsonResponse({
           id: record.id,
           outcome,
           matched_existing_id: matchedExistingId,
+          superseded_ids: supersededIds,
           created_at: record.createdAt,
         });
       } catch (err) {
@@ -209,6 +242,11 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
         .array(z.string())
         .optional()
         .describe('Filter by tags (AND match)'),
+      include_superseded: z
+        .boolean()
+        .optional()
+        .default(false)
+        .describe('Include memories that have been superseded (ADR-0006 §3.5)'),
     },
     async (input) => {
       const { ctx, error } = await authorize('memory_search', input.namespace, 'memory:read');
@@ -243,6 +281,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
         query: input.query,
         limit: input.limit ?? 10,
         tags: input.tags,
+        includeSuperseded: input.include_superseded ?? false,
       });
       // Quota already consumed by reserve() above.
 
@@ -338,6 +377,29 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
       try {
         await service.delete({ namespace: ctx.namespaceId, id: input.id });
         return jsonResponse({ deleted: true, id: input.id });
+      } catch (err) {
+        if (err instanceof MemoryNotFoundError) {
+          return notFoundResponse(err.namespaceId, err.memoryId);
+        }
+        throw err;
+      }
+    },
+  );
+
+  server.tool(
+    'memory_restore',
+    'Restore a soft-deleted (decayed-out) episodic memory by clearing its tombstone (ADR-0006 §3.4).',
+    {
+      namespace: z.string().describe('Namespace the memory belongs to'),
+      id: z.string().uuid().describe('Memory ID to restore'),
+    },
+    async (input) => {
+      const { ctx, error } = await authorize('memory_restore', input.namespace, 'memory:write');
+      if (!ctx) return authErrorResponse(error!);
+
+      try {
+        const restored = await service.restore({ namespace: ctx.namespaceId, id: input.id });
+        return jsonResponse(restored);
       } catch (err) {
         if (err instanceof MemoryNotFoundError) {
           return notFoundResponse(err.namespaceId, err.memoryId);

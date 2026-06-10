@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { QdrantClient } from '@qdrant/js-client-rest';
 import type { EmbeddingClient } from '../embeddings.js';
+import { appendFile, mkdir } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import {
   DECAY_DEFAULT_SCORE,
+  DEFAULT_DECAY_WEIGHT,
   DEDUP_DEFAULT_THRESHOLD,
   DEDUP_DISABLED_THRESHOLD,
   DEDUP_HISTORY_CAP,
@@ -13,6 +16,7 @@ import {
   type DeleteMemoryInput,
   type GetMemoryInput,
   type MemoryRecord,
+  type RestoreMemoryInput,
   type SearchMemoryInput,
   type SearchResult,
   type StalenessSignal,
@@ -53,10 +57,20 @@ export interface MemoryServiceDeps {
    */
   loadDedupThreshold?: (namespaceId: string) => Promise<number>;
   /**
+   * Resolves the per-namespace search-time decay weight (ADR-0006 §3.4). When
+   * absent or throwing, DEFAULT_DECAY_WEIGHT (0.5) is used.
+   */
+  loadDecayWeight?: (namespaceId: string) => Promise<number>;
+  /**
    * Qdrant search `params` for quantized collections (ADR-0010 §3.4 rescore +
    * oversampling). Applied to every vector search; omitted when quantization is off.
    */
   searchParams?: Record<string, unknown>;
+  /**
+   * Data root for the lifecycle audit log (`data/namespaces/<ns>/audit/lifecycle.jsonl`).
+   * Required for `restore` audit lines; when absent the audit write is skipped.
+   */
+  dataDir?: string;
 }
 
 export class MemoryService {
@@ -65,7 +79,9 @@ export class MemoryService {
   private readonly collection: string;
   private readonly now: () => Date;
   private readonly loadDedupThreshold?: (namespaceId: string) => Promise<number>;
+  private readonly loadDecayWeight?: (namespaceId: string) => Promise<number>;
   private readonly searchParams?: Record<string, unknown>;
+  private readonly dataDir?: string;
 
   constructor(deps: MemoryServiceDeps) {
     this.qdrant = deps.qdrant;
@@ -73,7 +89,9 @@ export class MemoryService {
     this.collection = deps.collection;
     this.now = deps.now ?? (() => new Date());
     this.loadDedupThreshold = deps.loadDedupThreshold;
+    this.loadDecayWeight = deps.loadDecayWeight;
     this.searchParams = deps.searchParams;
+    this.dataDir = deps.dataDir;
   }
 
   /**
@@ -96,7 +114,8 @@ export class MemoryService {
     if (input.id) {
       const record = this.insertRecord(input, input.id, nowIso);
       await this.upsertPoint(record, vector);
-      return { record, outcome: 'inserted', matchedExistingId: null };
+      const supersededIds = await this.markSuperseded(input, record.id);
+      return { record, outcome: 'inserted', matchedExistingId: null, supersededIds };
     }
 
     const threshold = await this.resolveDedupThreshold(input.namespace);
@@ -106,20 +125,78 @@ export class MemoryService {
       if (top && top.score > threshold) {
         if (top.score > DEDUP_REINFORCE_THRESHOLD) {
           const record = await this.reinforceExisting(top.record, nowIso);
-          return { record, outcome: 'reinforced', matchedExistingId: top.record.id };
+          return {
+            record,
+            outcome: 'reinforced',
+            matchedExistingId: top.record.id,
+            supersededIds: [],
+          };
         }
         const record = await this.mergeIntoExisting(top.record, input, nowIso);
-        return { record, outcome: 'merged', matchedExistingId: top.record.id };
+        return {
+          record,
+          outcome: 'merged',
+          matchedExistingId: top.record.id,
+          supersededIds: [],
+        };
       }
     }
 
     const record = this.insertRecord(input, randomUUID(), nowIso);
     await this.upsertPoint(record, vector);
-    return { record, outcome: 'inserted', matchedExistingId: null };
+    const supersededIds = await this.markSuperseded(input, record.id);
+    return { record, outcome: 'inserted', matchedExistingId: null, supersededIds };
   }
 
+  /**
+   * ADR-0006 §3.5 — mark each `input.supersedes` point in the same namespace with
+   * `superseded_by = newId`. Ids that don't exist or belong to another namespace
+   * are silently skipped (a supersession claim never fails a store). Returns the
+   * ids actually marked.
+   */
+  private async markSuperseded(
+    input: StoreMemoryInput,
+    newId: string,
+  ): Promise<string[]> {
+    const ids = input.supersedes;
+    if (!ids || ids.length === 0) return [];
+    const targets = ids.filter((id) => id !== newId);
+    if (targets.length === 0) return [];
+
+    const points = await this.qdrant.retrieve(this.collection, {
+      ids: targets,
+      with_payload: true,
+    });
+    const marked: string[] = [];
+    for (const point of points) {
+      const payload = (point.payload ?? {}) as Record<string, unknown>;
+      if (payload['namespace'] !== input.namespace) continue;
+      const id = point.id as string;
+      try {
+        await this.qdrant.setPayload(this.collection, {
+          wait: true,
+          payload: { superseded_by: newId },
+          points: [id],
+        });
+        marked.push(id);
+      } catch {
+        // best-effort: a failed mark does not fail the store
+      }
+    }
+    return marked;
+  }
+
+  /**
+   * Semantic search with lifecycle filtering + decay re-rank (ADR-0006 §3.4/§3.5).
+   *
+   * Qdrant null-filtering is awkward, so we over-fetch (`limit * 3`, min 30),
+   * decode, drop soft-deleted (always) and superseded (unless `includeSuperseded`)
+   * points in code, then re-rank by blending cosine with the point's decay_score:
+   * `ranked = cosine*(1-w) + cosine*decay*w`, sort desc, truncate to `limit`.
+   */
   async search(input: SearchMemoryInput): Promise<SearchResult[]> {
     const vector = await this.embeddings.embed(input.query);
+    const limit = input.limit ?? 10;
 
     const must: Array<Record<string, unknown>> = [
       { key: 'namespace', match: { value: input.namespace } },
@@ -132,23 +209,75 @@ export class MemoryService {
       }
     }
 
+    const fetchLimit = Math.max(limit * 3, 30);
     const results = await this.qdrant.search(this.collection, {
       vector,
-      limit: input.limit ?? 10,
+      limit: fetchLimit,
       filter: { must },
       with_payload: true,
       ...(this.searchParams ? { params: this.searchParams } : {}),
     });
 
-    return results.map((r) => ({
-      memory: payloadToMemory(r.id as string, r.payload as Record<string, unknown>),
-      score: r.score,
-    }));
+    const weight = await this.resolveDecayWeight(input.namespace);
+
+    const ranked = results
+      .map((r) => ({
+        memory: payloadToMemory(r.id as string, r.payload as Record<string, unknown>),
+        cosine: r.score,
+      }))
+      .filter(({ memory }) => {
+        if (memory.deletedAt != null) return false; // never return tombstones
+        if (!input.includeSuperseded && memory.supersededBy != null) return false;
+        return true;
+      })
+      .map(({ memory, cosine }) => ({
+        memory,
+        score: cosine * (1 - weight) + cosine * memory.decayScore * weight,
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+
+    return ranked;
   }
 
   async get(input: GetMemoryInput): Promise<MemoryRecord> {
-    const memory = await this.fetchOwned(input.namespace, input.id);
-    return memory;
+    return this.fetchOwned(input.namespace, input.id, input.includeDeleted ?? false);
+  }
+
+  /**
+   * ADR-0006 §3.4 — restore a soft-deleted memory by clearing `deleted_at`.
+   * Idempotent: a live point is returned unchanged. Throws MemoryNotFoundError
+   * if the point is absent or belongs to another namespace.
+   */
+  async restore(input: RestoreMemoryInput): Promise<MemoryRecord> {
+    const existing = await this.fetchOwned(input.namespace, input.id, true);
+    if (existing.deletedAt == null) return existing; // idempotent
+
+    await this.qdrant.setPayload(this.collection, {
+      wait: true,
+      payload: { deleted_at: null },
+      points: [input.id],
+    });
+    await this.appendLifecycleAudit(input.namespace, {
+      event: 'memory.restored',
+      point_id: input.id,
+    });
+    return { ...existing, deletedAt: null };
+  }
+
+  private async appendLifecycleAudit(
+    namespace: string,
+    entry: Record<string, unknown>,
+  ): Promise<void> {
+    if (!this.dataDir) return;
+    const path = join(this.dataDir, 'namespaces', namespace, 'audit', 'lifecycle.jsonl');
+    const line = `${JSON.stringify({ ...entry, ts: this.now().toISOString() })}\n`;
+    try {
+      await mkdir(dirname(path), { recursive: true });
+      await appendFile(path, line);
+    } catch {
+      // best-effort audit; a restore must not fail because the log is unwritable
+    }
   }
 
   async updateMetadata(input: UpdateMemoryMetadataInput): Promise<MemoryRecord> {
@@ -192,13 +321,24 @@ export class MemoryService {
     }
   }
 
+  private async resolveDecayWeight(namespace: string): Promise<number> {
+    if (!this.loadDecayWeight) return DEFAULT_DECAY_WEIGHT;
+    try {
+      return await this.loadDecayWeight(namespace);
+    } catch {
+      return DEFAULT_DECAY_WEIGHT;
+    }
+  }
+
   private async searchTopOne(
     namespace: string,
     vector: number[],
   ): Promise<{ record: MemoryRecord; score: number } | null> {
+    // Over-fetch so we can skip soft-deleted/superseded points in code (Qdrant
+    // null-filtering is awkward); dedup must never land on a tombstone (§3.4/§3.5).
     const results = await this.qdrant.search(this.collection, {
       vector,
-      limit: 1,
+      limit: 10,
       filter: {
         must: [
           { key: 'namespace', match: { value: namespace } },
@@ -208,12 +348,12 @@ export class MemoryService {
       with_payload: true,
       ...(this.searchParams ? { params: this.searchParams } : {}),
     });
-    if (results.length === 0) return null;
-    const r = results[0];
-    return {
-      record: payloadToMemory(r.id as string, r.payload as Record<string, unknown>),
-      score: r.score,
-    };
+    for (const r of results) {
+      const record = payloadToMemory(r.id as string, r.payload as Record<string, unknown>);
+      if (record.deletedAt != null || record.supersededBy != null) continue;
+      return { record, score: r.score };
+    }
+    return null;
   }
 
   /** Reinforce an existing point: bump retrieval_count + last_retrieved_at (ADR-0006 §3.2). */
@@ -298,7 +438,11 @@ export class MemoryService {
     });
   }
 
-  private async fetchOwned(namespaceId: string, id: string): Promise<MemoryRecord> {
+  private async fetchOwned(
+    namespaceId: string,
+    id: string,
+    includeDeleted = false,
+  ): Promise<MemoryRecord> {
     const points = await this.qdrant.retrieve(this.collection, {
       ids: [id],
       with_payload: true,
@@ -310,7 +454,12 @@ export class MemoryService {
     if (payload['namespace'] !== namespaceId) {
       throw new MemoryNotFoundError(namespaceId, id);
     }
-    return payloadToMemory(points[0].id as string, payload);
+    const record = payloadToMemory(points[0].id as string, payload);
+    // Soft-deleted points are hidden by default (ADR-0006 §3.4); restore opts in.
+    if (!includeDeleted && record.deletedAt != null) {
+      throw new MemoryNotFoundError(namespaceId, id);
+    }
+    return record;
   }
 
   private validateContent(content: string): void {
