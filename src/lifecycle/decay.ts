@@ -178,7 +178,10 @@ export class DecaySweeper {
 
         const reference = record.lastRetrievedAt ?? record.createdAt;
         const daysSince = (nowMs - Date.parse(reference)) / MS_PER_DAY;
-        let decay = 0.5 ** (daysSince / halfLife);
+        // Clamp to [0,1]: a future-dated created_at / clock skew makes daysSince
+        // negative, and 0.5**negative > 1 would violate the decay_score invariant
+        // and inflate re-rank scores (ADR-0006 §3.1).
+        let decay = Math.min(1, Math.max(0, 0.5 ** (daysSince / halfLife)));
         if (record.retrievalCount > 0 && decay < DECAY_RETRIEVED_FLOOR) {
           decay = DECAY_RETRIEVED_FLOOR;
         }

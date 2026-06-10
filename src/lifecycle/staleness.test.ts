@@ -562,4 +562,11 @@ describe('defaultStalenessCheckers.file — path traversal guard', () => {
       await rm(outside, { recursive: true, force: true });
     }
   });
+
+  it('gitCommit rejects an option-injection ref without spawning git', async () => {
+    const { defaultStalenessCheckers: real } = await import('./staleness.js');
+    for (const evil of ['--upload-pack=touch /tmp/pwned', '-x', '..', 'a;b', 'a b']) {
+      expect(await real.gitCommit(evil, '/some/repo')).toBeNull();
+    }
+  });
 });
