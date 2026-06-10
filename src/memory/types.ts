@@ -1,6 +1,24 @@
 export const MEMORY_KIND = 'episodic' as const;
 export type MemoryKind = typeof MEMORY_KIND;
 
+/** ADR-0006 §3.6 — per-memory truth-correspondence signal. */
+export type StalenessSignal = 'fresh' | 'unverified' | 'stale' | 'broken_ref';
+
+/**
+ * ADR-0006 §3.6 — optional pointer to something in the world the memory
+ * describes (a file, URL, or git commit). The staleness audit (#28) re-checks
+ * these and updates `stalenessSignal`. Absent → the memory is never audited.
+ */
+export interface VerifiesAgainst {
+  kind: 'file' | 'url' | 'git_commit';
+  /** Path / URL / commit SHA. */
+  ref: string;
+  /** When the reference was last checked (ISO-8601). */
+  capturedAt: string;
+  /** Optional digest/version captured at write time, compared on audit. */
+  lastKnownValue?: string;
+}
+
 export interface MemoryRecord {
   id: string;
   namespace: string;
@@ -17,6 +35,19 @@ export interface MemoryRecord {
   // ADR-0006 §3.3 reinforcement fields (added by #26).
   retrievalCount: number;
   lastRetrievedAt: string | null;
+  // ADR-0006 §3.1 lifecycle fields. The payload shape is locked here (#27) so
+  // later mechanisms (#27 decay/supersession/soft-delete, #28 staleness) reshape
+  // behaviour, not the at-rest schema.
+  /** Decay multiplier in [0,1] applied at search re-rank (ADR-0006 §3.4). 1.0 = no decay. */
+  decayScore: number;
+  /** Point ID of a newer memory that replaces this one; excluded from search by default (§3.5). */
+  supersededBy: string | null;
+  /** Soft-delete tombstone (ISO-8601); excluded from search/get when set (§3.4). */
+  deletedAt: string | null;
+  /** Truth-correspondence signal (§3.6); 'unverified' until the staleness audit runs. */
+  stalenessSignal: StalenessSignal;
+  /** Opt-in reference the staleness audit re-checks (§3.6); null → never audited. */
+  verifiesAgainst: VerifiesAgainst | null;
 }
 
 export interface SearchResult {
@@ -43,6 +74,8 @@ export interface StoreMemoryInput {
   tags?: string[];
   source?: string;
   id?: string;
+  /** ADR-0006 §3.6 — opt-in reference the staleness audit (#28) re-checks. */
+  verifiesAgainst?: VerifiesAgainst;
 }
 
 export interface SearchMemoryInput {
@@ -85,3 +118,27 @@ export const DEDUP_MIN_THRESHOLD = 0.85;
 export const DEDUP_DISABLED_THRESHOLD = 1.0;
 /** Max number of merged-away contents kept in `metadata.dedup_history`. */
 export const DEDUP_HISTORY_CAP = 5;
+
+// ── Decay / lifecycle (ADR-0006 §3.4) ───────────────────────────────────────
+/** A freshly-stored or never-decayed memory has full ranking weight. */
+export const DECAY_DEFAULT_SCORE = 1.0;
+/** A memory that has ever been retrieved never decays below this (§3.4). */
+export const DECAY_RETRIEVED_FLOOR = 0.5;
+/** Default blend between raw cosine and decay-adjusted score at re-rank (§3.4). */
+export const DEFAULT_DECAY_WEIGHT = 0.5;
+/** Days before a soft-deleted point is physically removed (§3.4). */
+export const DEFAULT_HARD_DELETE_GRACE_DAYS = 30;
+/** Default staleness-audit batch size per sweep (§3.6). */
+export const DEFAULT_STALENESS_AUDIT_BATCH_SIZE = 100;
+
+/**
+ * Half-life (days) for each decaying retention policy (ADR-0006 §3.4). The
+ * shipped `RetentionPolicy` is a string enum (decay-Nd) rather than the ADR's
+ * object union; this table maps each value to its half-life. `keep-forever`
+ * has no entry → never decays.
+ */
+export const RETENTION_HALF_LIFE_DAYS: Readonly<Record<string, number>> = {
+  'decay-90d': 90,
+  'decay-180d': 180,
+  'decay-365d': 365,
+};
