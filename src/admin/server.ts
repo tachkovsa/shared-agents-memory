@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import type { QdrantClient } from '@qdrant/js-client-rest';
 import type { PatStore } from '../auth/pat-store.js';
 import type { MemoryService } from '../memory/service.js';
 import { createAdminApp } from './api/app.js';
@@ -22,6 +23,13 @@ export interface AdminServerOptions {
   patStore?: PatStore;
   /** MemoryService over the engine's Qdrant — enables the memory browser routes. */
   memoryService?: MemoryService;
+  /** Enables the observability summary route (health + counts + metrics). */
+  observability?: {
+    qdrant: QdrantClient;
+    collection: string;
+    version: string;
+    getBreakerState?: () => string;
+  };
 }
 
 export interface AdminServer {
@@ -54,6 +62,7 @@ export async function startAdminServer(opts: AdminServerOptions): Promise<AdminS
     dataDir: opts.dataDir,
     patStore: opts.patStore,
     memoryService: opts.memoryService,
+    observability: opts.observability,
   });
   app.addHook('onClose', () => {
     db.close();
