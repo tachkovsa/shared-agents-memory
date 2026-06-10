@@ -14,11 +14,12 @@ An Architecture Decision Record (ADR) captures a single significant architectura
 | [0002](0002-namespace-tenancy-model.md) | Namespace as tenancy boundary | Accepted |
 | [0003](0003-transport-stdio-and-http.md) | Transport: stdio for local, streamable HTTP for shared | Accepted |
 | [0004](0004-auth-pat-v1.md) | Auth: PAT in v1, OAuth/DCR deferred | Accepted |
-| [0005](0005-embeddings-strategy.md) | Embeddings: OpenRouter primary, no local fallback in v1 | Accepted |
+| [0005](0005-embeddings-strategy.md) | Embeddings: OpenRouter primary, no local fallback in v1 | Accepted (§3.1 amended by [0010](0010-self-hosted-embeddings.md)) |
 | [0006](0006-memory-lifecycle.md) | Memory lifecycle: dedup, reinforcement, per-namespace decay | Accepted |
 | [0007](0007-human-operator-auth.md) | Human (operator) authentication for the admin console | Accepted |
 | [0008](0008-admin-console-transport.md) | Admin console transport + stack (Fastify, SQLite, Vite SPA) | Accepted |
 | [0009](0009-open-core-boundary.md) | Open-core boundary — OSS engine + admin, private SaaS control-plane | Accepted |
+| [0010](0010-self-hosted-embeddings.md) | Self-hosted embeddings — local model + int8 quantization, per-region deploy | Accepted |
 
 ## Status values
 
