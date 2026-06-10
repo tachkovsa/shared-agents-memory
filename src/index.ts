@@ -8,6 +8,7 @@ import {
 } from './auth/index.js';
 import { loadConfig } from './config.js';
 import { EmbeddingClient } from './embeddings.js';
+import { MemoryService } from './memory/service.js';
 import { promEmbeddingMetrics } from './metrics/embeddings.js';
 import { createQdrantClient } from './qdrant.js';
 import { runHttpTransport } from './transport/http.js';
@@ -44,6 +45,13 @@ async function main(): Promise<void> {
   // so the default MCP container behaves exactly as before. Separate listener; the
   // MCP transport below is untouched.
   if (process.env['ADMIN_ENABLED'] === 'true') {
+    // A read/delete MemoryService for the console memory browser (no embedding on
+    // these paths). Shares the engine's Qdrant client.
+    const adminMemory = new MemoryService({
+      qdrant,
+      embeddings,
+      collection: config.qdrant.collectionName,
+    });
     const admin = await startAdminServer({
       dataDir: config.storage.dataDir,
       bindHost: process.env['ADMIN_BIND_HOST'] ?? '127.0.0.1',
@@ -53,6 +61,7 @@ async function main(): Promise<void> {
       // Share the engine's PatStore instance so operator-minted PATs and
       // agent-side lookups stay consistent in-process.
       patStore,
+      memoryService: adminMemory,
     });
     process.stderr.write(`[admin] console listening on ${admin.url}\n`);
   }

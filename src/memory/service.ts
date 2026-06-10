@@ -11,10 +11,14 @@ import {
   DEDUP_HISTORY_CAP,
   DEDUP_REINFORCE_THRESHOLD,
   MEMORY_KIND,
+  MEMORY_LIST_DEFAULT_LIMIT,
+  MEMORY_LIST_MAX_LIMIT,
   MEMORY_MAX_CONTENT_LENGTH,
   MEMORY_MAX_TAGS,
   type DeleteMemoryInput,
   type GetMemoryInput,
+  type ListMemoryInput,
+  type ListMemoryResult,
   type MemoryRecord,
   type RestoreMemoryInput,
   type SearchMemoryInput,
@@ -242,6 +246,38 @@ export class MemoryService {
 
   async get(input: GetMemoryInput): Promise<MemoryRecord> {
     return this.fetchOwned(input.namespace, input.id, input.includeDeleted ?? false);
+  }
+
+  /**
+   * Cursor-paginated namespace listing for the operator console (#67). Uses
+   * Qdrant `scroll` (no vector) filtered by namespace + kind; soft-deleted points
+   * are excluded unless `includeDeleted`. The returned `nextCursor` is the opaque
+   * Qdrant page offset — pass it back to fetch the next page (null when done).
+   */
+  async list(input: ListMemoryInput): Promise<ListMemoryResult> {
+    const limit = Math.min(
+      Math.max(1, input.limit ?? MEMORY_LIST_DEFAULT_LIMIT),
+      MEMORY_LIST_MAX_LIMIT,
+    );
+    const result = await this.qdrant.scroll(this.collection, {
+      filter: {
+        must: [
+          { key: 'namespace', match: { value: input.namespace } },
+          { key: 'kind', match: { value: MEMORY_KIND } },
+        ],
+      },
+      limit,
+      offset: input.cursor ?? undefined,
+      with_payload: true,
+      with_vector: false,
+    });
+    let memories = result.points.map((p) =>
+      payloadToMemory(p.id as string, p.payload as Record<string, unknown>),
+    );
+    if (!input.includeDeleted) {
+      memories = memories.filter((m) => m.deletedAt == null);
+    }
+    return { memories, nextCursor: result.next_page_offset ?? null };
   }
 
   /**

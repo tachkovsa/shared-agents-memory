@@ -108,6 +108,25 @@ export interface RestoreMemoryInput {
   id: string;
 }
 
+/** Cursor-paginated listing (operator console memory browser, #67). */
+export interface ListMemoryInput {
+  namespace: string;
+  limit?: number;
+  /** Opaque Qdrant scroll cursor from a previous page's `nextCursor`. */
+  cursor?: string | number | Record<string, unknown> | null;
+  /** Include soft-deleted records; default false. */
+  includeDeleted?: boolean;
+}
+
+export interface ListMemoryResult {
+  memories: MemoryRecord[];
+  /** Pass back as `cursor` for the next page; null when exhausted. */
+  nextCursor: string | number | Record<string, unknown> | null;
+}
+
+export const MEMORY_LIST_MAX_LIMIT = 200;
+export const MEMORY_LIST_DEFAULT_LIMIT = 50;
+
 export interface UpdateMemoryMetadataInput {
   namespace: string;
   id: string;
