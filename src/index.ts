@@ -1,3 +1,4 @@
+import { startAdminServer } from './admin/server.js';
 import {
   deriveBootstrapPaths,
   loadOrInitPepper,
@@ -38,6 +39,20 @@ async function main(): Promise<void> {
 
   const qdrant = createQdrantClient(config);
   const embeddings = new EmbeddingClient(config, { metrics: promEmbeddingMetrics });
+
+  // Admin console — additive and opt-in (ADR-0008 §3.2). Off unless ADMIN_ENABLED=true,
+  // so the default MCP container behaves exactly as before. Separate listener; the
+  // MCP transport below is untouched.
+  if (process.env['ADMIN_ENABLED'] === 'true') {
+    const admin = await startAdminServer({
+      dataDir: config.storage.dataDir,
+      bindHost: process.env['ADMIN_BIND_HOST'] ?? '127.0.0.1',
+      bindPort: Number(process.env['ADMIN_BIND_PORT'] ?? '8081'),
+      cookieSecure: process.env['ADMIN_COOKIE_SECURE'] !== 'false',
+      trustProxy: process.env['ADMIN_TRUST_PROXY'] === 'true',
+    });
+    process.stderr.write(`[admin] console listening on ${admin.url}\n`);
+  }
 
   if (config.transport === 'http') {
     await runHttpTransport({ config, patStore, pepper, qdrant, embeddings });

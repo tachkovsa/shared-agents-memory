@@ -1,5 +1,6 @@
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
+import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { AuthProvider, Principal } from '../auth/auth-provider.js';
 import type { SessionService } from '../auth/session-service.js';
@@ -26,6 +27,8 @@ export interface AdminAppOptions {
    */
   trustProxy?: boolean;
   loginRateLimit?: { max: number; timeWindow: string };
+  /** Absolute path to the built SPA (dist/admin-public). Omit to skip static serving (tests). */
+  staticDir?: string;
 }
 
 /**
@@ -49,7 +52,25 @@ export async function createAdminApp(opts: AdminAppOptions): Promise<FastifyInst
     loginRateLimit: opts.loginRateLimit ?? { max: 10, timeWindow: '1 minute' },
   });
 
+  if (opts.staticDir) {
+    await registerSpa(app, opts.staticDir);
+  }
+
   return app;
+}
+
+/**
+ * Serve the built SPA, with a fallback to index.html for client-side routes.
+ * API paths keep returning JSON 404s — only non-API GETs fall through to the app.
+ */
+async function registerSpa(app: FastifyInstance, root: string): Promise<void> {
+  await app.register(fastifyStatic, { root, wildcard: false });
+  app.setNotFoundHandler((req, reply) => {
+    if (req.method === 'GET' && !req.url.startsWith('/api/')) {
+      return reply.sendFile('index.html');
+    }
+    return reply.code(404).send({ error: 'not_found' });
+  });
 }
 
 type PreHandler = (
