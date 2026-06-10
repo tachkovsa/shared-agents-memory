@@ -1,9 +1,33 @@
 import { QdrantClient } from '@qdrant/js-client-rest'
 import type { Schemas } from '@qdrant/js-client-rest'
-import type { Config } from './config.js'
+import type { Config, QdrantQuantizationConfig } from './config.js'
 
-const VECTOR_SIZE = 4096
 const DISTANCE = 'Cosine' as const
+
+/** Options controlling collection creation (ADR-0010 §3.3/§3.4). */
+export interface InitCollectionOptions {
+  /** Vector dimension — provider-driven, immutable once the collection exists. */
+  dimension: number
+  /** Quantization config; omit or `mode: 'none'` to store full-precision vectors. */
+  quantization?: QdrantQuantizationConfig
+}
+
+/**
+ * Build the Qdrant `search` `params` for quantized collections (ADR-0010 §3.4):
+ * oversample by quantized distance, then rescore the top candidates against the
+ * on-disk originals. Returns `undefined` when quantization is off (no rescore).
+ */
+export function quantizationSearchParams(
+  quantization: QdrantQuantizationConfig | undefined,
+): Schemas['SearchParams'] | undefined {
+  if (!quantization || quantization.mode === 'none') return undefined
+  return {
+    quantization: {
+      rescore: quantization.rescore,
+      oversampling: quantization.oversampling,
+    },
+  }
+}
 
 /**
  * Payload index descriptor — single source of truth for all indexes created on
@@ -112,7 +136,11 @@ function isAlreadyExistsError(err: unknown): boolean {
 export async function initCollection(
   client: QdrantClient,
   collectionName: string,
+  opts: InitCollectionOptions,
 ): Promise<void> {
+  const dimension = opts.dimension
+  const quantize = opts.quantization?.mode === 'int8'
+
   const collections = await client.getCollections()
   const exists = collections.collections.some((c) => c.name === collectionName)
 
@@ -124,16 +152,16 @@ export async function initCollection(
       throw new QdrantSchemaMismatchError(
         collectionName,
         'vectors',
-        `size=${VECTOR_SIZE}, distance=${DISTANCE}`,
+        `size=${dimension}, distance=${DISTANCE}`,
         'no unnamed vector config found',
       )
     }
 
-    if (vectorParams.size !== VECTOR_SIZE) {
+    if (vectorParams.size !== dimension) {
       throw new QdrantSchemaMismatchError(
         collectionName,
         'size',
-        VECTOR_SIZE,
+        dimension,
         vectorParams.size,
       )
     }
@@ -147,11 +175,21 @@ export async function initCollection(
       )
     }
   } else {
+    // ADR-0010 §3.4: quantized vectors resident, originals + payload on disk.
     await client.createCollection(collectionName, {
       vectors: {
-        size: VECTOR_SIZE,
+        size: dimension,
         distance: DISTANCE,
+        ...(quantize ? { on_disk: true } : {}),
       },
+      on_disk_payload: true,
+      ...(quantize
+        ? {
+            quantization_config: {
+              scalar: { type: 'int8', always_ram: true },
+            },
+          }
+        : {}),
     })
   }
 

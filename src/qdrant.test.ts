@@ -5,6 +5,7 @@ import {
   initCollection,
   PAYLOAD_INDEXES,
   QdrantSchemaMismatchError,
+  quantizationSearchParams,
 } from './qdrant.js'
 
 // ---------------------------------------------------------------------------
@@ -124,7 +125,7 @@ describe('initCollection — fresh Qdrant (collection does not exist)', () => {
   it('calls createCollection with size=4096 and distance=Cosine', async () => {
     const client = makeFakeClient({})
     // Default getCollections returns no collections → triggers create path
-    await initCollection(client as unknown as QdrantClient, COLLECTION)
+    await initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 4096 })
 
     expect(client.createCollection).toHaveBeenCalledOnce()
     const [name, args] = (client.createCollection as ReturnType<typeof vi.fn>).mock.calls[0] as [
@@ -138,7 +139,7 @@ describe('initCollection — fresh Qdrant (collection does not exist)', () => {
 
   it('creates all payload indexes after collection creation', async () => {
     const client = makeFakeClient({})
-    await initCollection(client as unknown as QdrantClient, COLLECTION)
+    await initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 4096 })
 
     expect(client.createPayloadIndex).toHaveBeenCalledTimes(PAYLOAD_INDEXES.length)
     const calledFieldNames = (
@@ -153,7 +154,7 @@ describe('initCollection — fresh Qdrant (collection does not exist)', () => {
 
   it('does not call getCollection on a fresh instance', async () => {
     const client = makeFakeClient({})
-    await initCollection(client as unknown as QdrantClient, COLLECTION)
+    await initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 4096 })
     expect(client.getCollection).not.toHaveBeenCalled()
   })
 })
@@ -167,7 +168,7 @@ describe('initCollection — existing compatible collection', () => {
       }),
       getCollection: async () => compatibleCollectionInfo(),
     })
-    await initCollection(client as unknown as QdrantClient, COLLECTION)
+    await initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 4096 })
     expect(client.createCollection).not.toHaveBeenCalled()
   })
 
@@ -179,7 +180,7 @@ describe('initCollection — existing compatible collection', () => {
       }),
       getCollection: async () => compatibleCollectionInfo(),
     })
-    await initCollection(client as unknown as QdrantClient, COLLECTION)
+    await initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 4096 })
     expect(client.createPayloadIndex).toHaveBeenCalledTimes(PAYLOAD_INDEXES.length)
   })
 })
@@ -198,7 +199,7 @@ describe('initCollection — incompatible existing schema', () => {
     })
 
     await expect(
-      initCollection(client as unknown as QdrantClient, COLLECTION),
+      initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 4096 }),
     ).rejects.toThrow(QdrantSchemaMismatchError)
   })
 
@@ -215,7 +216,7 @@ describe('initCollection — incompatible existing schema', () => {
     })
 
     await expect(
-      initCollection(client as unknown as QdrantClient, COLLECTION),
+      initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 4096 }),
     ).rejects.toThrowError(/size.*1536|1536.*size/i)
   })
 
@@ -232,7 +233,7 @@ describe('initCollection — incompatible existing schema', () => {
     })
 
     await expect(
-      initCollection(client as unknown as QdrantClient, COLLECTION),
+      initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 4096 }),
     ).rejects.toThrow(QdrantSchemaMismatchError)
   })
 
@@ -249,7 +250,7 @@ describe('initCollection — incompatible existing schema', () => {
     })
 
     await expect(
-      initCollection(client as unknown as QdrantClient, COLLECTION),
+      initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 4096 }),
     ).rejects.toThrowError(/distance.*Euclid|Euclid.*distance/i)
   })
 
@@ -266,7 +267,7 @@ describe('initCollection — incompatible existing schema', () => {
     })
 
     await expect(
-      initCollection(client as unknown as QdrantClient, COLLECTION),
+      initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 4096 }),
     ).rejects.toThrow(QdrantSchemaMismatchError)
 
     expect(client.createPayloadIndex).not.toHaveBeenCalled()
@@ -293,7 +294,7 @@ describe('initCollection — idempotent index creation', () => {
 
     // Should resolve without throwing
     await expect(
-      initCollection(client as unknown as QdrantClient, COLLECTION),
+      initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 4096 }),
     ).resolves.toBeUndefined()
   })
 
@@ -312,7 +313,7 @@ describe('initCollection — idempotent index creation', () => {
     })
 
     await expect(
-      initCollection(client as unknown as QdrantClient, COLLECTION),
+      initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 4096 }),
     ).rejects.toThrow('Qdrant connection refused')
   })
 
@@ -335,8 +336,78 @@ describe('initCollection — idempotent index creation', () => {
     })
 
     await expect(
-      initCollection(client as unknown as QdrantClient, COLLECTION),
+      initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 4096 }),
     ).resolves.toBeUndefined()
+  })
+})
+
+describe('initCollection — configurable dimension + quantization (ADR-0010)', () => {
+  it('honours a non-4096 dimension on create', async () => {
+    const client = makeFakeClient({})
+    await initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 1024 })
+    const [, args] = (client.createCollection as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      { vectors: { size: number } },
+    ]
+    expect(args.vectors.size).toBe(1024)
+  })
+
+  it('adds int8 quantization_config + on_disk when quantization is int8', async () => {
+    const client = makeFakeClient({})
+    await initCollection(client as unknown as QdrantClient, COLLECTION, {
+      dimension: 1024,
+      quantization: { mode: 'int8', rescore: true, oversampling: 2.0 },
+    })
+    const [, args] = (client.createCollection as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      {
+        vectors: { on_disk?: boolean }
+        on_disk_payload?: boolean
+        quantization_config?: { scalar?: { type?: string; always_ram?: boolean } }
+      },
+    ]
+    expect(args.quantization_config?.scalar?.type).toBe('int8')
+    expect(args.quantization_config?.scalar?.always_ram).toBe(true)
+    expect(args.vectors.on_disk).toBe(true)
+    expect(args.on_disk_payload).toBe(true)
+  })
+
+  it('omits quantization_config when quantization mode is none', async () => {
+    const client = makeFakeClient({})
+    await initCollection(client as unknown as QdrantClient, COLLECTION, {
+      dimension: 1024,
+      quantization: { mode: 'none', rescore: true, oversampling: 2.0 },
+    })
+    const [, args] = (client.createCollection as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      { quantization_config?: unknown; vectors: { on_disk?: boolean } },
+    ]
+    expect(args.quantization_config).toBeUndefined()
+    expect(args.vectors.on_disk).toBeUndefined()
+  })
+
+  it('validates an existing collection against the configured dimension', async () => {
+    const info = compatibleCollectionInfo() // size 4096
+    const client = makeFakeClient({
+      getCollections: async () => ({ collections: [{ name: COLLECTION }], time: 0 }),
+      getCollection: async () => info,
+    })
+    // Configured dimension 1024 vs existing 4096 → mismatch
+    await expect(
+      initCollection(client as unknown as QdrantClient, COLLECTION, { dimension: 1024 }),
+    ).rejects.toThrow(QdrantSchemaMismatchError)
+  })
+})
+
+describe('quantizationSearchParams', () => {
+  it('returns rescore + oversampling params for int8', () => {
+    const params = quantizationSearchParams({ mode: 'int8', rescore: true, oversampling: 2.5 })
+    expect(params).toEqual({ quantization: { rescore: true, oversampling: 2.5 } })
+  })
+
+  it('returns undefined when quantization is off', () => {
+    expect(quantizationSearchParams({ mode: 'none', rescore: true, oversampling: 2 })).toBeUndefined()
+    expect(quantizationSearchParams(undefined)).toBeUndefined()
   })
 })
 
