@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type AgentScope } from '@/lib/api';
 
 // ── namespaces ──
@@ -22,12 +22,22 @@ export function useShareNamespace(id: string) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['namespace', id] }),
   });
 }
+export function useUnshareNamespace(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (agentId: string) => api.unshareNamespace(id, agentId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['namespace', id] }),
+  });
+}
 
 // ── memory ──
 export function useMemories(ns: string | null, includeDeleted = false) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: ['memories', ns, includeDeleted],
-    queryFn: () => api.memories(ns as string, { include_deleted: includeDeleted, limit: 100 }),
+    queryFn: ({ pageParam }) =>
+      api.memories(ns as string, { include_deleted: includeDeleted, limit: 100, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
     enabled: !!ns,
   });
 }
@@ -42,7 +52,10 @@ export function useDeleteMemory(ns: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.deleteMemory(ns, id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['memories', ns] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['memories', ns] });
+      qc.invalidateQueries({ queryKey: ['mem-search', ns] });
+    },
   });
 }
 export function useWriteMemory(ns: string) {
@@ -50,7 +63,10 @@ export function useWriteMemory(ns: string) {
   return useMutation({
     mutationFn: (input: { content: string; agent_id: string; tags?: string[]; summary?: string; source?: string }) =>
       api.writeMemory(ns, input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['memories', ns] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['memories', ns] });
+      qc.invalidateQueries({ queryKey: ['mem-search', ns] });
+    },
   });
 }
 

@@ -56,7 +56,8 @@ export function registerMemoryAdminRoutes(
   // Semantic search (Qdrant vector search; replaces the prototype's client-side ranking).
   app.get<{ Params: { id: string }; Querystring: { q?: string; limit?: string } }>(
     '/api/admin/namespaces/:id/memories/search',
-    { preHandler: requireAuth },
+    // Embeddings + Qdrant per call — throttle so a compromised session can't DoS them.
+    { preHandler: requireAuth, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async (req, reply) => {
       if (!(await namespaceExists(req.params.id))) {
         return reply.code(404).send({ error: 'not_found' });
@@ -81,7 +82,8 @@ export function registerMemoryAdminRoutes(
   // Operator write — useful for seeding/correcting; agents normally write via MCP.
   app.post<{ Params: { id: string } }>(
     '/api/admin/namespaces/:id/memories',
-    { preHandler: requireAuth },
+    // Embedding + dedup search on every write — throttle per session.
+    { preHandler: requireAuth, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } },
     async (req, reply) => {
       if (!(await namespaceExists(req.params.id))) {
         return reply.code(404).send({ error: 'not_found' });

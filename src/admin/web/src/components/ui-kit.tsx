@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -75,14 +76,33 @@ export function Modal({
   );
 }
 
+// Escape stack: only the top-most open layer closes on Esc, so a modal stacked
+// over a drawer doesn't close both at once.
+const escStack: Array<() => void> = [];
+let escBound = false;
+
+function ensureEscListener() {
+  if (escBound) return;
+  escBound = true;
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && escStack.length > 0) {
+      escStack[escStack.length - 1]();
+    }
+  });
+}
+
 function useEscape(onClose: () => void) {
+  const ref = useRef(onClose);
+  ref.current = onClose;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    ensureEscListener();
+    const handler = () => ref.current();
+    escStack.push(handler);
+    return () => {
+      const i = escStack.lastIndexOf(handler);
+      if (i >= 0) escStack.splice(i, 1);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, []);
 }
 
 // ── Toast ────────────────────────────────────────────────────────────────

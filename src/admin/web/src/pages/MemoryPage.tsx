@@ -34,8 +34,9 @@ export function MemoryPage() {
     enabled: !!activeNs && submitted.length > 0,
   });
 
+  const listed = list.data?.pages.flatMap((p) => p.memories) ?? [];
   const rows: Array<MemoryRecordView & { score?: number }> =
-    submitted && search.data ? search.data.results : (list.data?.memories ?? []);
+    submitted && search.data ? search.data.results : listed;
 
   return (
     <>
@@ -146,6 +147,17 @@ export function MemoryPage() {
             </tbody>
           </table>
         )}
+        {!submitted && list.hasNextPage && (
+          <div style={{ padding: 14, textAlign: 'center', borderTop: '1px solid var(--border)' }}>
+            <button
+              className="btn btn-sm btn-secondary"
+              disabled={list.isFetchingNextPage}
+              onClick={() => void list.fetchNextPage()}
+            >
+              {list.isFetchingNextPage ? 'Загрузка…' : 'Загрузить ещё'}
+            </button>
+          </div>
+        )}
       </div>
 
       {open && (
@@ -241,7 +253,7 @@ function WriteModal({
           <PencilSimple size={20} /> Записать в память
         </>
       }
-      subtitle="Только несекретные данные — токены и ключи блокируются на записи."
+      subtitle="Только несекретные данные: не вставляйте сюда токены, ключи и пароли."
       onClose={onClose}
       footer={
         <>

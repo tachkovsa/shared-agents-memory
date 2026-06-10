@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { Plus, Stack, UserPlus, Users } from '@phosphor-icons/react';
+import { Plus, Stack, Trash, UserPlus, Users } from '@phosphor-icons/react';
 import { Badge, Drawer, Empty, Loading, Modal, useToast } from '@/components/ui-kit';
 import {
   useCreateNamespace,
   useNamespace,
   useNamespaces,
   useShareNamespace,
+  useUnshareNamespace,
 } from '@/hooks/use-data';
 import { ApiError, type AgentScope } from '@/lib/api';
 import { formatDate, relativeTime } from '@/lib/format';
@@ -91,6 +92,7 @@ export function NamespacesPage() {
 function NamespaceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const detail = useNamespace(id);
   const share = useShareNamespace(id);
+  const unshare = useUnshareNamespace(id);
   const toast = useToast();
   const [showShare, setShowShare] = useState(false);
   const ns = detail.data;
@@ -133,18 +135,38 @@ function NamespaceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
             {ns.members.length === 0 ? (
               <p className="muted">Пока только владелец.</p>
             ) : (
-              ns.members.map((m) => (
-                <div className="row between" key={m.agent_id} style={{ padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
-                  <span className="mono">{m.agent_id}</span>
-                  <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
-                    {m.scopes.map((s) => (
-                      <span className="tag" key={s}>
-                        {s}
-                      </span>
-                    ))}
+              ns.members.map((m) => {
+                const isOwner = m.agent_id === ns.owner_agent_id;
+                return (
+                  <div className="row between" key={m.agent_id} style={{ padding: '9px 0', borderBottom: '1px solid var(--border)' }}>
+                    <span className="mono">{m.agent_id}</span>
+                    <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
+                      {m.scopes.map((s) => (
+                        <span className="tag" key={s}>
+                          {s}
+                        </span>
+                      ))}
+                      {isOwner ? (
+                        <Badge tone="teal">owner</Badge>
+                      ) : (
+                        <button
+                          className="btn btn-sm btn-danger-ghost"
+                          disabled={unshare.isPending}
+                          title="Отозвать доступ"
+                          onClick={() => {
+                            void unshare
+                              .mutateAsync(m.agent_id)
+                              .then(() => toast('Доступ отозван'))
+                              .catch((e) => toast(e instanceof ApiError ? e.code : 'Ошибка'));
+                          }}
+                        >
+                          <Trash size={14} />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </>
         ) : (
@@ -187,7 +209,7 @@ function CreateNamespaceModal({
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  const valid = id.length > 0 && owner.trim().length > 0;
+  const valid = id.length >= 3 && id.length <= 64 && owner.trim().length > 0;
   return (
     <Modal
       title={

@@ -6,10 +6,10 @@ import {
   loadMembers,
   loadNamespace,
   NamespaceExistsError,
-  saveMembers,
+  removeMember,
+  upsertMember,
 } from '../../../namespaces/store.js';
 import type { AgentScope } from '../../../auth/types.js';
-import type { NamespaceMember } from '../../../namespaces/types.js';
 import { createNamespaceSchema, shareNamespaceSchema } from '../../shared/schemas.js';
 import type { PreHandler } from '../app.js';
 
@@ -135,19 +135,12 @@ export function registerNamespaceAdminRoutes(
       if (!parsed.success) {
         return reply.code(400).send({ error: 'invalid_input', issues: parsed.error.issues });
       }
-      const members = (await loadMembers(dataDir, req.params.id)) ?? [];
-      const now = new Date().toISOString();
-      const existing = members.find((m) => m.agent_id === parsed.data.agent_id);
-      const member: NamespaceMember = {
+      // Locked read-modify-write — concurrent share/unshare can't clobber each other.
+      const member = await upsertMember(dataDir, req.params.id, {
         agent_id: parsed.data.agent_id,
         scopes: parsed.data.scopes,
-        added_by: existing?.added_by ?? `operator:${req.principal!.operatorId}`,
-        added_at: existing?.added_at ?? now,
-      };
-      const next = existing
-        ? members.map((m) => (m.agent_id === member.agent_id ? member : m))
-        : [...members, member];
-      await saveMembers(dataDir, req.params.id, next);
+        addedBy: `operator:${req.principal!.operatorId}`,
+      });
       return reply.code(201).send(member);
     },
   );
@@ -160,10 +153,8 @@ export function registerNamespaceAdminRoutes(
       if (!isValidNamespaceId(req.params.id) || (await loadNamespace(dataDir, req.params.id)) === null) {
         return reply.code(404).send({ error: 'not_found' });
       }
-      const members = (await loadMembers(dataDir, req.params.id)) ?? [];
-      const next = members.filter((m) => m.agent_id !== req.params.agentId);
-      await saveMembers(dataDir, req.params.id, next);
-      return { removed: members.length - next.length, agent_id: req.params.agentId };
+      const removed = await removeMember(dataDir, req.params.id, req.params.agentId);
+      return { removed, agent_id: req.params.agentId };
     },
   );
 }

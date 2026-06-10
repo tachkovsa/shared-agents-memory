@@ -40,7 +40,22 @@ export type LoginInput = z.infer<typeof loginSchema>;
 
 // ── namespace + memory mutations (operator BFF) ──────────────────────────────
 
-const scopesSchema = z.array(z.enum(ALL_SCOPES as readonly [AgentScope, ...AgentScope[]])).min(1);
+/**
+ * Scopes an operator may grant to a *shared* member. Excludes the privileged
+ * `namespace:admin` and `service:admin` — sharing must never be an escalation
+ * vector that hands an agent token instance- or namespace-admin rights.
+ */
+export const SHAREABLE_SCOPES = [
+  'memory:read',
+  'memory:write',
+  'memory:delete',
+  'rules:read',
+  'rules:write',
+] as const satisfies readonly AgentScope[];
+
+const shareableScopesSchema = z
+  .array(z.enum(SHAREABLE_SCOPES as unknown as readonly [AgentScope, ...AgentScope[]]))
+  .min(1);
 
 /** kebab-case, 3–64 chars — mirrors NAMESPACE_ID_REGEX in namespaces/store.ts. */
 export const namespaceIdSchema = z
@@ -55,7 +70,7 @@ export const createNamespaceSchema = z.object({
 
 export const shareNamespaceSchema = z.object({
   agent_id: z.string().trim().min(1).max(128),
-  scopes: scopesSchema,
+  scopes: shareableScopesSchema,
 });
 
 export const writeMemorySchema = z.object({

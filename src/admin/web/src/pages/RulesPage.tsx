@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Scroll, ShieldCheck } from '@phosphor-icons/react';
+import { LockSimple, Scroll, ShieldCheck } from '@phosphor-icons/react';
 import { Badge, Empty, Loading } from '@/components/ui-kit';
 import { useNamespaces, useRules } from '@/hooks/use-data';
 
@@ -69,7 +69,9 @@ export function RulesPage() {
                     <span className="chip-mono">{r.id}</span>
                   </div>
                 </div>
-                <button className="toggle on" disabled aria-label="Управляется через MCP" title="Редактирование через MCP" />
+                <span className="badge neutral" title="Редактирование через MCP">
+                  <LockSimple size={12} /> read-only
+                </span>
               </div>
               {r.severity && (
                 <div style={{ marginTop: 12 }}>
