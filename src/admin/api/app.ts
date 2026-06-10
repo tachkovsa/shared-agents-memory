@@ -8,8 +8,10 @@ import type { SetupTokenVerifier } from '../auth/setup-token.js';
 import type { OperatorRepository } from '../stores/types.js';
 import { AuthAuditWriter, auditPathForDataDir } from '../../auth/audit.js';
 import type { PatStore } from '../../auth/pat-store.js';
+import type { MemoryService } from '../../memory/service.js';
 import { makeOrphanPruneCallback } from '../../namespaces/tools.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerMemoryAdminRoutes } from './routes/memories.js';
 import { registerNamespaceAdminRoutes } from './routes/namespaces.js';
 import { registerPatAdminRoutes } from './routes/pats.js';
 
@@ -41,6 +43,8 @@ export interface AdminAppOptions {
   dataDir?: string;
   /** Shared PatStore (already opened with the server pepper) — enables PAT management routes. */
   patStore?: PatStore;
+  /** MemoryService over the engine's Qdrant — enables the memory browser routes (needs dataDir). */
+  memoryService?: MemoryService;
 }
 
 /**
@@ -81,6 +85,14 @@ export async function createAdminApp(opts: AdminAppOptions): Promise<FastifyInst
           )
         : undefined;
     registerPatAdminRoutes(app, { patStore: opts.patStore, requireAuth, onRevoke });
+  }
+
+  if (opts.memoryService && opts.dataDir) {
+    registerMemoryAdminRoutes(app, {
+      memoryService: opts.memoryService,
+      dataDir: opts.dataDir,
+      requireAuth,
+    });
   }
 
   if (opts.staticDir) {

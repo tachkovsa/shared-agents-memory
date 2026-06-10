@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { PatStore } from '../auth/pat-store.js';
+import type { MemoryService } from '../memory/service.js';
 import { createAdminApp } from './api/app.js';
 import { Argon2idPasswordHasher } from './auth/password.js';
 import { SessionService } from './auth/session-service.js';
@@ -19,6 +20,8 @@ export interface AdminServerOptions {
   staticDir?: string;
   /** Shared PatStore (opened with the server pepper) — enables PAT management routes. */
   patStore?: PatStore;
+  /** MemoryService over the engine's Qdrant — enables the memory browser routes. */
+  memoryService?: MemoryService;
 }
 
 export interface AdminServer {
@@ -50,6 +53,7 @@ export async function startAdminServer(opts: AdminServerOptions): Promise<AdminS
     setupTokens,
     dataDir: opts.dataDir,
     patStore: opts.patStore,
+    memoryService: opts.memoryService,
   });
   app.addHook('onClose', () => {
     db.close();
