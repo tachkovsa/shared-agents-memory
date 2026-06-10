@@ -70,15 +70,19 @@ describe('MemoryService.store', () => {
       now: () => new Date('2026-05-27T10:00:00.000Z'),
     });
 
-    const record = await service.store({
+    const { record, outcome, matchedExistingId } = await service.store({
       namespace: 'personal',
       agentId: 'agent_a',
       content: 'hello world',
       tags: ['note'],
     });
 
+    expect(outcome).toBe('inserted');
+    expect(matchedExistingId).toBeNull();
     expect(record.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(record.kind).toBe(MEMORY_KIND);
+    expect(record.retrievalCount).toBe(0);
+    expect(record.lastRetrievedAt).toBeNull();
     expect(record.createdAt).toBe('2026-05-27T10:00:00.000Z');
     expect(record.updatedAt).toBe('2026-05-27T10:00:00.000Z');
     expect(embeddings.embed).toHaveBeenCalledWith('hello world');
@@ -98,7 +102,7 @@ describe('MemoryService.store', () => {
     const service = makeService({ qdrant: client });
     const id = '11111111-1111-1111-1111-111111111111';
 
-    const record = await service.store({
+    const { record, outcome } = await service.store({
       namespace: 'personal',
       agentId: 'agent_a',
       content: 'idempotent',
@@ -106,6 +110,9 @@ describe('MemoryService.store', () => {
     });
 
     expect(record.id).toBe(id);
+    expect(outcome).toBe('inserted');
+    // Caller-supplied id bypasses dedup: no search, straight upsert.
+    expect(fake.search).not.toHaveBeenCalled();
     const [, body] = (fake.upsert.mock.calls[0] ?? []) as [
       string,
       { points: { id: string }[] },
@@ -141,6 +148,171 @@ describe('MemoryService.store', () => {
         tags: Array.from({ length: MEMORY_MAX_TAGS + 1 }, (_, i) => `t${i}`),
       }),
     ).rejects.toMatchObject({ field: 'tags' });
+  });
+});
+
+describe('MemoryService.store dedup (ADR-0006 §3.2)', () => {
+  function existingPayload(overrides: Record<string, unknown> = {}) {
+    return {
+      namespace: 'personal',
+      agent_id: 'agent_a',
+      kind: MEMORY_KIND,
+      content: 'lock rows with FOR UPDATE',
+      summary: '',
+      metadata: {},
+      tags: ['db'],
+      source: '',
+      created_at: '2026-05-27T09:00:00.000Z',
+      updated_at: '2026-05-27T09:00:00.000Z',
+      retrieval_count: 2,
+      last_retrieved_at: null,
+      ...overrides,
+    };
+  }
+
+  it('reinforces an exact match (cosine > 0.99): bump counter, no new point', async () => {
+    const { client, fake } = makeQdrant({
+      search: vi.fn(async () => [
+        { id: 'existing-1', score: 0.995, payload: existingPayload() },
+      ]),
+    });
+    const service = makeService({
+      qdrant: client,
+      now: () => new Date('2026-06-10T00:00:00.000Z'),
+    });
+
+    const { record, outcome, matchedExistingId } = await service.store({
+      namespace: 'personal',
+      agentId: 'agent_b',
+      content: 'use FOR UPDATE locks on the rows',
+    });
+
+    expect(outcome).toBe('reinforced');
+    expect(matchedExistingId).toBe('existing-1');
+    expect(record.id).toBe('existing-1');
+    expect(record.retrievalCount).toBe(3);
+    expect(record.lastRetrievedAt).toBe('2026-06-10T00:00:00.000Z');
+    expect(fake.upsert).not.toHaveBeenCalled();
+    expect(fake.setPayload).toHaveBeenCalledTimes(1);
+  });
+
+  it('merges a near-duplicate (0.95 < cosine <= 0.99): union tags + dedup_history', async () => {
+    const { client, fake } = makeQdrant({
+      search: vi.fn(async () => [
+        { id: 'existing-1', score: 0.97, payload: existingPayload() },
+      ]),
+    });
+    const service = makeService({
+      qdrant: client,
+      now: () => new Date('2026-06-10T00:00:00.000Z'),
+    });
+
+    const { record, outcome, matchedExistingId } = await service.store({
+      namespace: 'personal',
+      agentId: 'agent_b',
+      content: 'lock the rows using FOR UPDATE',
+      tags: ['sql'],
+    });
+
+    expect(outcome).toBe('merged');
+    expect(matchedExistingId).toBe('existing-1');
+    expect(record.tags.sort()).toEqual(['db', 'sql']);
+    expect(record.metadata?.['dedup_history']).toEqual(['lock the rows using FOR UPDATE']);
+    expect(record.retrievalCount).toBe(3);
+    expect(record.updatedAt).toBe('2026-06-10T00:00:00.000Z');
+    expect(fake.upsert).not.toHaveBeenCalled();
+    expect(fake.setPayload).toHaveBeenCalledTimes(1);
+  });
+
+  it('caps dedup_history at 5 entries', async () => {
+    const { client } = makeQdrant({
+      search: vi.fn(async () => [
+        {
+          id: 'existing-1',
+          score: 0.97,
+          payload: existingPayload({
+            metadata: { dedup_history: ['a', 'b', 'c', 'd', 'e'] },
+          }),
+        },
+      ]),
+    });
+    const service = makeService({ qdrant: client });
+
+    const { record } = await service.store({
+      namespace: 'personal',
+      agentId: 'agent_b',
+      content: 'sixth variant',
+    });
+
+    expect(record.metadata?.['dedup_history']).toEqual(['b', 'c', 'd', 'e', 'sixth variant']);
+  });
+
+  it('inserts a new point below the threshold', async () => {
+    const { client, fake } = makeQdrant({
+      search: vi.fn(async () => [
+        { id: 'existing-1', score: 0.9, payload: existingPayload() },
+      ]),
+    });
+    const service = makeService({ qdrant: client });
+
+    const { record, outcome, matchedExistingId } = await service.store({
+      namespace: 'personal',
+      agentId: 'agent_b',
+      content: 'a completely different fact',
+    });
+
+    expect(outcome).toBe('inserted');
+    expect(matchedExistingId).toBeNull();
+    expect(record.id).not.toBe('existing-1');
+    expect(fake.upsert).toHaveBeenCalledTimes(1);
+    expect(fake.setPayload).not.toHaveBeenCalled();
+  });
+
+  it('honours a per-namespace dedup_threshold of 1.0 (dedup disabled): no search', async () => {
+    const { client, fake } = makeQdrant({
+      search: vi.fn(async () => [
+        { id: 'existing-1', score: 0.999, payload: existingPayload() },
+      ]),
+    });
+    // Override the loader to disable dedup for this namespace.
+    const disabled = new MemoryService({
+      qdrant: client,
+      embeddings: makeEmbeddings(),
+      collection: COLLECTION,
+      loadDedupThreshold: async () => 1.0,
+    });
+
+    const { outcome } = await disabled.store({
+      namespace: 'personal',
+      agentId: 'agent_b',
+      content: 'identical to existing',
+    });
+
+    expect(outcome).toBe('inserted');
+    expect(fake.search).not.toHaveBeenCalled();
+    expect(fake.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('honours a lowered dedup_threshold (0.85): merges what default would insert', async () => {
+    const { client } = makeQdrant({
+      search: vi.fn(async () => [
+        { id: 'existing-1', score: 0.88, payload: existingPayload() },
+      ]),
+    });
+    const service = new MemoryService({
+      qdrant: client,
+      embeddings: makeEmbeddings(),
+      collection: COLLECTION,
+      loadDedupThreshold: async () => 0.85,
+    });
+
+    const { outcome } = await service.store({
+      namespace: 'personal',
+      agentId: 'agent_b',
+      content: 'loosely related',
+    });
+
+    expect(outcome).toBe('merged');
   });
 });
 

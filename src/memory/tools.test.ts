@@ -153,6 +153,8 @@ describe('memory_store', () => {
       })) as never,
     );
     expect(body.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(body.outcome).toBe('inserted');
+    expect(body.matched_existing_id).toBeNull();
     expect(fake.upsert).toHaveBeenCalledTimes(1);
     const [, upsertBody] = (fake.upsert.mock.calls[0] ?? []) as [
       string,

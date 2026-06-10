@@ -1,6 +1,10 @@
+import { DEDUP_DEFAULT_THRESHOLD } from '../memory/types.js';
 import type { NamespaceQuota, RetentionPolicy } from './types.js';
 
 export const DEFAULT_RETENTION: RetentionPolicy = 'keep-forever';
+
+/** Default per-namespace dedup threshold (ADR-0006 §3.2). */
+export const DEFAULT_DEDUP_THRESHOLD = DEDUP_DEFAULT_THRESHOLD;
 
 export const DEFAULT_RULES_INDEX_BODY = `# Rules
 
