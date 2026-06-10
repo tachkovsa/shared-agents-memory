@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { loadNamespace } from '../../../namespaces/store.js';
+import { isValidNamespaceId, loadNamespace } from '../../../namespaces/store.js';
 import { listRules, loadRule } from '../../../rules/store.js';
 import type { PreHandler } from '../app.js';
 
@@ -20,6 +20,9 @@ export function registerRuleAdminRoutes(app: FastifyInstance, deps: RuleAdminRou
     '/api/admin/namespaces/:id/rules',
     { preHandler: requireAuth },
     async (req, reply) => {
+      if (!isValidNamespaceId(req.params.id)) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
       if ((await loadNamespace(dataDir, req.params.id)) === null) {
         return reply.code(404).send({ error: 'not_found' });
       }
@@ -31,6 +34,9 @@ export function registerRuleAdminRoutes(app: FastifyInstance, deps: RuleAdminRou
     '/api/admin/namespaces/:id/rules/:ruleId',
     { preHandler: requireAuth },
     async (req, reply) => {
+      if (!isValidNamespaceId(req.params.id)) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
       if ((await loadNamespace(dataDir, req.params.id)) === null) {
         return reply.code(404).send({ error: 'not_found' });
       }

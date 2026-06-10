@@ -44,6 +44,19 @@ export class NamespaceNotFoundError extends Error {
   }
 }
 
+/** Canonical namespace-id shape (kebab-case, 3–64 chars). */
+const NAMESPACE_ID_REGEX = /^[a-z][a-z0-9-]{1,62}[a-z0-9]$/;
+
+/**
+ * Validate a namespace id before it reaches the filesystem. Callers that take an
+ * id from an untrusted boundary (e.g. the admin BFF `:id` param) MUST gate on this
+ * first — `namespaceDir` joins the id raw, so an unchecked id with encoded slashes
+ * / `..` could escape `dataDir/namespaces/`.
+ */
+export function isValidNamespaceId(id: string): boolean {
+  return NAMESPACE_ID_REGEX.test(id);
+}
+
 export function namespaceDir(dataDir: string, id: string): string {
   return join(dataDir, 'namespaces', id);
 }

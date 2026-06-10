@@ -59,8 +59,8 @@ describe('admin BFF — audit read API', () => {
     const sid = await login();
     const res = await authGet('/api/admin/audit', sid);
     expect(res.statusCode).toBe(200);
-    const { entries, total } = res.json();
-    expect(total).toBe(3);
+    const { entries, count } = res.json();
+    expect(count).toBe(3);
     expect(entries).toHaveLength(3);
     expect(entries[0].event).toBe('pat.minted'); // newest first
   });
@@ -76,7 +76,7 @@ describe('admin BFF — audit read API', () => {
     const sid = await login();
     const res = await authGet('/api/admin/audit?limit=1', sid);
     expect(res.json().entries).toHaveLength(1);
-    expect(res.json().total).toBe(3);
+    expect(res.json().count).toBe(3);
   });
 
   it('400s a bad limit', async () => {
@@ -105,7 +105,7 @@ describe('admin BFF — audit read API', () => {
         headers: { cookie: `${SESSION_COOKIE}=${sid}` },
       });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ entries: [], total: 0 });
+      expect(res.json()).toEqual({ entries: [], count: 0, truncated: false });
     } finally {
       await freshApp.close();
       freshDb.close();

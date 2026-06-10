@@ -87,4 +87,13 @@ describe('admin BFF — rules read API', () => {
     expect((await authGet('/api/admin/namespaces/nope/rules', sid)).statusCode).toBe(404);
     expect((await authGet(`/api/admin/namespaces/${NS}/rules/ghost`, sid)).statusCode).toBe(404);
   });
+
+  it('rejects a path-traversal namespace id (encoded slash) with 404', async () => {
+    const sid = await login();
+    // Unvalidated, '../_deleted/x' would escape dataDir/namespaces/.
+    const evil = encodeURIComponent('../_deleted/x');
+    const res = await authGet(`/api/admin/namespaces/${evil}/rules`, sid);
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'not_found' });
+  });
 });
