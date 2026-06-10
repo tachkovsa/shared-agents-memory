@@ -72,7 +72,14 @@ async function metricsSummary(): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = {};
   for (const m of await register.getMetricsAsJSON()) {
     if (!m.name.startsWith('mem_')) continue;
-    const all = m.values ?? [];
+    // Drop per-namespace series (e.g. mem_memory_count{namespace}): they belong to
+    // the namespaces screen, not the instance dashboard, and keeping them here only
+    // adds cardinality + repeats namespace IDs. Instance-level series (labelled by
+    // outcome/kind/limit/result) stay.
+    const all = (m.values ?? []).filter(
+      (v) => !(v.labels && Object.prototype.hasOwnProperty.call(v.labels, 'namespace')),
+    );
+    if (all.length === 0 && (m.values?.length ?? 0) > 0) continue;
     const values = all.slice(0, MAX_SERIES_PER_METRIC).map((v) => {
       // prom-client tags histogram/summary sub-series with `metricName`
       // (e.g. <base>_bucket/_sum/_count) at runtime, though it's absent from the type.

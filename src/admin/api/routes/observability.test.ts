@@ -127,4 +127,23 @@ describe('admin BFF — observability', () => {
     expect(res.json().health.status).toBe('degraded');
     expect(res.json().health.embeddings_breaker).toBe('open');
   });
+
+  it('excludes per-namespace metric series (no namespace IDs in the metrics blob)', async () => {
+    const { memoryCount } = await import('../../../metrics/registry.js');
+    memoryCount.set({ namespace: 'secret-tenant-xyz' }, 5);
+    try {
+      await build(makeQdrant());
+      const sid = await login();
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/admin/observability',
+        headers: { cookie: `${SESSION_COOKIE}=${sid}` },
+      });
+      const blob = JSON.stringify(res.json().metrics);
+      expect(blob).not.toContain('secret-tenant-xyz');
+      expect(blob).not.toContain('mem_memory_count');
+    } finally {
+      memoryCount.reset();
+    }
+  });
 });
