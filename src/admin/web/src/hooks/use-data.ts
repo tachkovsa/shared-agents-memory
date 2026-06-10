@@ -95,15 +95,23 @@ export function useRotatePat() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pats'] }),
   });
 }
+export function useDeletePat() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deletePat(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pats'] }),
+  });
+}
 
 // ── rules ──
 export function useRules(ns: string | null) {
   return useQuery({ queryKey: ['rules', ns], queryFn: () => api.rules(ns as string), enabled: !!ns });
 }
-export function useToggleRule(ns: string) {
+export function useCreateRule(ns: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ ruleId, enabled }: { ruleId: string; enabled: boolean }) => api.toggleRule(ns, ruleId, enabled),
+    mutationFn: (input: { rule_id: string; title: string; body: string; severity?: 'hard' | 'soft'; tags?: string[] }) =>
+      api.createRule(ns, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['rules', ns] }),
   });
 }

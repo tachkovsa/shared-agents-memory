@@ -218,9 +218,38 @@ export class PatStore {
     for (const line of lines) {
       const trimmed = line.trim();
       if (trimmed.length === 0) continue;
-      const record = JSON.parse(trimmed) as PatRecord;
+      const record = JSON.parse(trimmed) as PatRecord & { _deleted?: boolean };
+      // Tombstone — a later `delete()` purge. Drop the id from the rebuilt index.
+      if (record._deleted) {
+        this.unindex(record.id);
+        continue;
+      }
       this.index(record);
     }
+  }
+
+  /**
+   * Hard-delete a PAT: append a tombstone and drop it from the in-memory index.
+   * Only revoked tokens may be deleted — an active token must be revoked first so
+   * its disablement is auditable. Lets operators clear out piles of rotated keys.
+   */
+  async delete(id: string): Promise<void> {
+    const current = this.byId.get(id);
+    if (!current) throw new PatNotFoundError(id);
+    if (!current.is_revoked) throw new PatDeleteStateError(`cannot delete active PAT ${id}; revoke it first`);
+    await mkdir(dirname(this.storePath), { recursive: true });
+    await appendFile(this.storePath, `${JSON.stringify({ id, _deleted: true })}\n`, { mode: 0o600 });
+    this.unindex(id);
+    this.invalidateCacheForId(id);
+  }
+
+  private unindex(id: string): void {
+    const existing = this.byId.get(id);
+    if (!existing) return;
+    const set = this.byPrefix.get(existing.token_prefix);
+    set?.delete(id);
+    if (set && set.size === 0) this.byPrefix.delete(existing.token_prefix);
+    this.byId.delete(id);
   }
 
   private async append(pat: AgentPat, meta?: { supersedes?: string }): Promise<void> {
@@ -263,6 +292,13 @@ export class PatRotationStateError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'PatRotationStateError';
+  }
+}
+
+export class PatDeleteStateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PatDeleteStateError';
   }
 }
 

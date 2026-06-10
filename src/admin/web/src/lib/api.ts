@@ -167,9 +167,11 @@ export interface Observability {
 }
 
 export interface Billing {
-  plan: { id: string; name: string; price: string; status: string; renews_at?: string | null };
+  plan: { id: string; name: string; price: string; period?: string; status: string; renews_at?: string | null };
   included: string[];
   self_hosted: { name: string; price: string; note: string };
+  payment_method?: { brand: string; last4: string };
+  history?: Array<{ id: string; date: string; amount: string; status: string; period: string }>;
 }
 
 function rememberCsrf<T extends { csrf_token: string }>(res: T): T {
@@ -243,6 +245,9 @@ export const api = {
   async rotatePat(id: string): Promise<{ pat: Pat; secret: string }> {
     return request(`/pats/${encodeURIComponent(id)}/rotate`, { method: 'POST', body: {} });
   },
+  async deletePat(id: string): Promise<{ deleted: true; id: string }> {
+    return request(`/pats/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
 
   // ── rules ──
   async rules(ns: string): Promise<{ rules: RuleSummary[] }> {
@@ -251,8 +256,11 @@ export const api = {
   async rule(ns: string, ruleId: string): Promise<{ frontmatter: Record<string, unknown>; body: string }> {
     return request(`/namespaces/${encodeURIComponent(ns)}/rules/${encodeURIComponent(ruleId)}`);
   },
-  async toggleRule(ns: string, ruleId: string, enabled: boolean): Promise<RuleSummary> {
-    return request(`/namespaces/${encodeURIComponent(ns)}/rules/${encodeURIComponent(ruleId)}/toggle`, { method: 'POST', body: { enabled } });
+  async createRule(
+    ns: string,
+    input: { rule_id: string; title: string; body: string; severity?: 'hard' | 'soft'; tags?: string[] },
+  ): Promise<{ frontmatter: Record<string, unknown>; body: string }> {
+    return request(`/namespaces/${encodeURIComponent(ns)}/rules`, { method: 'POST', body: input });
   },
 
   // ── audit ──

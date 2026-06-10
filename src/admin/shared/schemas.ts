@@ -86,6 +86,16 @@ export const searchMemoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).optional(),
 });
 
+export const createRuleSchema = z.object({
+  rule_id: z.string().trim().min(1).max(64),
+  title: z.string().trim().min(1).max(200),
+  body: z.string().trim().min(1).max(20_000),
+  severity: z.enum(['hard', 'soft']).optional(),
+  tags: z.array(z.string().trim().min(1).max(64)).max(16).optional(),
+  applies_to: z.array(z.string().trim().min(1).max(128)).max(32).optional(),
+});
+
 export type CreateNamespaceInput = z.infer<typeof createNamespaceSchema>;
 export type ShareNamespaceInput = z.infer<typeof shareNamespaceSchema>;
 export type WriteMemoryInput = z.infer<typeof writeMemorySchema>;
+export type CreateRuleInput = z.infer<typeof createRuleSchema>;

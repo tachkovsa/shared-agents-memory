@@ -3,6 +3,42 @@ import { Badge, Loading, Stat } from '@/components/ui-kit';
 import { useObservability } from '@/hooks/use-data';
 import { compactNumber } from '@/lib/format';
 
+// Human-readable names for the engine's mem_* counters.
+const METRIC_LABELS: Record<string, { label: string; hint: string }> = {
+  mem_http_requests_total: { label: 'HTTP-запросов', hint: 'всего обращений к API' },
+  mem_http_sessions_active: { label: 'Активных сессий', hint: 'открытые MCP-сессии сейчас' },
+  mem_http_session_duration_seconds: { label: 'Длительность сессий', hint: 'наблюдений, сек' },
+  mem_stdio_messages_total: { label: 'Сообщений stdio', hint: 'обмен по stdio-транспорту' },
+  mem_pat_lookups_total: { label: 'Проверок PAT-ключей', hint: 'аутентификаций агентов' },
+  mem_pat_active_count: { label: 'Активных PAT-ключей', hint: 'не отозванные токены' },
+  mem_auth_failures_total: { label: 'Отказов авторизации', hint: 'неуспешные проверки доступа' },
+  mem_embedding_calls_total: { label: 'Вызовов эмбеддингов', hint: 'обращения к модели векторизации' },
+  mem_embedding_latency_seconds: { label: 'Задержка эмбеддингов', hint: 'наблюдений, сек' },
+  mem_embedding_dimension_mismatches_total: { label: 'Несовпадений размерности', hint: 'вектор не той длины' },
+  mem_memory_count: { label: 'Записей в памяти', hint: 'точек в Qdrant' },
+  mem_quota_rejections_total: { label: 'Отклонено по квотам', hint: 'превышен лимит namespace' },
+  mem_staleness_audit_total: { label: 'Проверок устаревания', hint: 'аудит свежести записей' },
+  mem_decay_sweep_duration_seconds: { label: 'Пересчёт decay', hint: 'наблюдений, сек' },
+  mem_lifecycle_deletes_total: { label: 'Удалений (жизненный цикл)', hint: 'очистка по политике хранения' },
+};
+
+function metricValue(m: { type: string; values: Array<{ value: number | null; series?: string }> }): number {
+  if (m.type === 'histogram' || m.type === 'summary') {
+    const count = m.values.find((v) => v.series?.endsWith('_count'));
+    return count?.value ?? 0;
+  }
+  return m.values.reduce((s, v) => s + (v.value ?? 0), 0);
+}
+
+function prettifyMetric(name: string): { label: string; hint: string } {
+  return (
+    METRIC_LABELS[name] ?? {
+      label: name.replace(/^mem_/, '').replace(/_total$/, '').replace(/_/g, ' '),
+      hint: 'счётчик движка',
+    }
+  );
+}
+
 export function ObservabilityPage() {
   const obs = useObservability();
   if (obs.isPending) return <Loading />;
@@ -41,21 +77,24 @@ export function ObservabilityPage() {
       </div>
 
       <div className="divider" />
-      <div className="section-title">Метрики (mem_*)</div>
+      <div className="section-title">Метрики движка</div>
       <div className="card">
         {Object.entries(d.metrics).map(([name, m], i, arr) => {
-          const total = m.values.reduce((s, v) => s + (v.value ?? 0), 0);
+          const { label, hint } = prettifyMetric(name);
           return (
             <div
               className="row between"
               key={name}
-              style={{ padding: '12px 18px', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}
+              style={{ padding: '13px 18px', borderBottom: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}
             >
-              <span className="mono" style={{ fontSize: 13 }}>{name}</span>
-              <span className="row" style={{ gap: 10 }}>
-                <span className="muted" style={{ fontSize: 12 }}>{m.type}</span>
-                <span className="num" style={{ fontWeight: 600 }}>{compactNumber(total)}</span>
-              </span>
+              <div>
+                <div style={{ fontWeight: 600 }}>{label}</div>
+                <div className="muted" style={{ fontSize: 12 }}>{hint}</div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div className="num" style={{ fontWeight: 700, fontSize: 16 }}>{compactNumber(metricValue(m))}</div>
+                <div className="mono" style={{ fontSize: 10.5, color: 'var(--fg-4)' }}>{name}</div>
+              </div>
             </div>
           );
         })}

@@ -7,13 +7,14 @@ import {
   ListChecks,
   Moon,
   Scroll,
+  SignOut,
   Stack,
   Sun,
 } from '@phosphor-icons/react';
 import type { Icon } from '@phosphor-icons/react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { LogoMark } from '@/components/Logo';
-import { useMe } from '@/hooks/use-auth';
+import { useLogout, useMe } from '@/hooks/use-auth';
 import { useNamespaces, useObservability, usePats } from '@/hooks/use-data';
 import { useTheme } from '@/lib/theme';
 
@@ -38,9 +39,16 @@ const TITLES: Record<string, { title: string; group: string }> = {
 function Sidebar() {
   const me = useMe();
   const { theme, toggle } = useTheme();
+  const logout = useLogout();
+  const navigate = useNavigate();
   const ns = useNamespaces();
   const pats = usePats();
   const obs = useObservability();
+
+  async function onLogout() {
+    await logout.mutateAsync();
+    navigate('/login');
+  }
 
   const operator = me.data?.operator;
   const nsCount = ns.data?.namespaces.length;
@@ -125,9 +133,21 @@ function Sidebar() {
             <b>{operator?.username ?? '—'}</b>
             <span>{operator?.role ?? ''}</span>
           </div>
-          <button className="theme-toggle" onClick={toggle} aria-label="Сменить тему">
-            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
+          <div className="row" style={{ marginLeft: 'auto', gap: 6 }}>
+            <button className="theme-toggle" style={{ marginLeft: 0 }} onClick={toggle} aria-label="Сменить тему">
+              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+            <button
+              className="theme-toggle"
+              style={{ marginLeft: 0 }}
+              onClick={onLogout}
+              disabled={logout.isPending}
+              aria-label="Выйти"
+              title="Выйти"
+            >
+              <SignOut size={16} />
+            </button>
+          </div>
         </div>
       </div>
     </nav>

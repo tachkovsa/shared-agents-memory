@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { PatStore } from '../../../auth/pat-store.js';
-import { PatNotFoundError, PatRotationStateError } from '../../../auth/pat-store.js';
+import { PatDeleteStateError, PatNotFoundError, PatRotationStateError } from '../../../auth/pat-store.js';
 import type { AgentPat } from '../../../auth/types.js';
 import { createPatSchema, revokePatSchema } from '../../shared/schemas.js';
 import type { PreHandler } from '../app.js';
@@ -106,6 +106,22 @@ export function registerPatAdminRoutes(app: FastifyInstance, deps: PatAdminRoute
       } catch (err) {
         if (err instanceof PatNotFoundError) return reply.code(404).send({ error: 'not_found' });
         if (err instanceof PatRotationStateError) return reply.code(409).send({ error: 'pat_revoked' });
+        throw err;
+      }
+    },
+  );
+
+  // Hard-delete a (revoked) PAT — lets operators clear out rotated/revoked keys.
+  app.delete<{ Params: { id: string } }>(
+    '/api/admin/pats/:id',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      try {
+        await patStore.delete(req.params.id);
+        return { deleted: true, id: req.params.id };
+      } catch (err) {
+        if (err instanceof PatNotFoundError) return reply.code(404).send({ error: 'not_found' });
+        if (err instanceof PatDeleteStateError) return reply.code(409).send({ error: 'pat_active' });
         throw err;
       }
     },

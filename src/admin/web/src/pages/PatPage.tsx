@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { ArrowsClockwise, Copy, Key, Plus, Prohibit, Warning } from '@phosphor-icons/react';
+import { ArrowsClockwise, Copy, Key, Plus, Prohibit, Trash, Warning } from '@phosphor-icons/react';
 import { Badge, Empty, Loading, Modal, useToast } from '@/components/ui-kit';
-import { useCreatePat, useNamespaces, usePats, useRevokePat, useRotatePat } from '@/hooks/use-data';
+import { useCreatePat, useDeletePat, useNamespaces, usePats, useRevokePat, useRotatePat } from '@/hooks/use-data';
 import { ApiError, type AgentScope, type Pat } from '@/lib/api';
 import { formatDate, relativeTime } from '@/lib/format';
 
@@ -21,12 +21,14 @@ export function PatPage() {
   const create = useCreatePat();
   const revoke = useRevokePat();
   const rotate = useRotatePat();
+  const del = useDeletePat();
   const toast = useToast();
 
   const [showCreate, setShowCreate] = useState(false);
   const [secret, setSecret] = useState<{ pat: Pat; secret: string } | null>(null);
   const [revoking, setRevoking] = useState<Pat | null>(null);
   const [rotating, setRotating] = useState<Pat | null>(null);
+  const [deleting, setDeleting] = useState<Pat | null>(null);
 
   return (
     <>
@@ -90,7 +92,11 @@ export function PatPage() {
                   </td>
                   <td>
                     <div className="row row-actions" style={{ justifyContent: 'flex-end' }}>
-                      {!p.is_revoked && (
+                      {p.is_revoked ? (
+                        <button className="btn btn-sm btn-danger-ghost" onClick={() => setDeleting(p)} title="Удалить ключ">
+                          <Trash size={15} /> Удалить
+                        </button>
+                      ) : (
                         <>
                           <button className="btn btn-sm btn-secondary" onClick={() => setRotating(p)}>
                             <ArrowsClockwise size={15} /> Ротация
@@ -198,6 +204,43 @@ export function PatPage() {
             <div>
               Старый секрет будет <b>сразу отозван</b> — агент <b>{rotating.agent_identity}</b> перестанет работать,
               пока вы не пропишете новый. Новый секрет покажется один раз.
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {deleting && (
+        <Modal
+          title="Удалить ключ?"
+          subtitle={`${deleting.display_name} (${deleting.token_prefix}…)`}
+          onClose={() => setDeleting(null)}
+          footer={
+            <>
+              <button className="btn btn-secondary" onClick={() => setDeleting(null)}>
+                Отмена
+              </button>
+              <button
+                className="btn btn-danger"
+                disabled={del.isPending}
+                onClick={async () => {
+                  try {
+                    await del.mutateAsync(deleting.id);
+                    toast('Ключ удалён');
+                    setDeleting(null);
+                  } catch (e) {
+                    toast(e instanceof ApiError ? e.code : 'Ошибка');
+                  }
+                }}
+              >
+                Удалить навсегда
+              </button>
+            </>
+          }
+        >
+          <div className="callout danger">
+            <Warning size={19} />
+            <div>
+              Запись об уже отозванном ключе будет удалена из списка безвозвратно. Сам доступ ключ давно потерял.
             </div>
           </div>
         </Modal>
