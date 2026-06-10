@@ -12,6 +12,7 @@ import type { PatStore } from '../auth/pat-store.js';
 import { AuthError } from '../auth/request-context.js';
 import { authorizeNamespaceAccess, authorizeServiceAccess } from '../auth/resolve-request.js';
 import { ALL_SCOPES, type AgentPat, type AgentScope } from '../auth/types.js';
+import { DEDUP_DISABLED_THRESHOLD, DEDUP_MIN_THRESHOLD } from '../memory/index.js';
 import {
   createNamespaceSkeleton,
   listNamespaceIds,
@@ -51,6 +52,16 @@ const namespaceIdSchema = z
 const retentionSchema = z
   .enum(['keep-forever', 'decay-90d', 'decay-180d', 'decay-365d'] as const)
   .describe('Retention policy for memories in this namespace (ADR-0006 §3.7)');
+
+const dedupThresholdSchema = z
+  .number()
+  .refine(
+    (v) =>
+      v === DEDUP_DISABLED_THRESHOLD ||
+      (v >= DEDUP_MIN_THRESHOLD && v < DEDUP_DISABLED_THRESHOLD),
+    `dedup_threshold must be in [${DEDUP_MIN_THRESHOLD}, ${DEDUP_DISABLED_THRESHOLD}) or exactly ${DEDUP_DISABLED_THRESHOLD} to disable dedup`,
+  )
+  .describe('Semantic dedup threshold (ADR-0006 §3.2); [0.85, 0.99] or 1.0 to disable');
 
 const quotaSchema = z
   .object({
@@ -397,11 +408,12 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
   // --------------------------------------------------------------------------
   server.tool(
     'namespace_update',
-    'Update namespace display_name, retention_policy, or quota. Requires namespace:admin on the target namespace.',
+    'Update namespace display_name, retention_policy, dedup_threshold, or quota. Requires namespace:admin on the target namespace.',
     {
       id: namespaceIdSchema,
       display_name: z.string().min(1).optional().describe('New display name'),
       retention_policy: retentionSchema.optional(),
+      dedup_threshold: dedupThresholdSchema.optional(),
       quota: quotaSchema.optional().describe('Quota fields to merge with existing quota'),
     },
     async (input) => {
@@ -415,6 +427,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
         ...ns,
         display_name: input.display_name ?? ns.display_name,
         retention_policy: input.retention_policy ?? ns.retention_policy,
+        dedup_threshold: input.dedup_threshold ?? ns.dedup_threshold,
         quota: input.quota
           ? {
               daily_embedding_tokens:
@@ -434,6 +447,7 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
         namespace_id: updated.id,
         display_name: updated.display_name,
         retention_policy: updated.retention_policy,
+        dedup_threshold: updated.dedup_threshold,
         quota: updated.quota,
         updated_at: updated.updated_at,
       });

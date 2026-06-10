@@ -20,7 +20,13 @@ import {
 } from '../auth/index.js';
 import type { Config } from '../config.js';
 import { EmbeddingClient } from '../embeddings.js';
-import { MemoryService, registerMemoryTools } from '../memory/index.js';
+import {
+  DEDUP_DEFAULT_THRESHOLD,
+  MemoryService,
+  ReinforcementBuffer,
+  registerMemoryTools,
+} from '../memory/index.js';
+import { loadNamespace } from '../namespaces/store.js';
 import { makeOrphanPruneCallback, registerNamespaceTools } from '../namespaces/tools.js';
 import { initCollection } from '../qdrant.js';
 import { registerRuleTools } from '../rules/index.js';
@@ -78,13 +84,29 @@ export async function runStdioTransport(deps: StdioDeps): Promise<void> {
     qdrant,
     embeddings,
     collection: config.qdrant.collectionName,
+    loadDedupThreshold: async (ns) =>
+      (await loadNamespace(config.storage.dataDir, ns))?.dedup_threshold ??
+      DEDUP_DEFAULT_THRESHOLD,
   });
+
+  const reinforcement = new ReinforcementBuffer({
+    qdrant,
+    collection: config.qdrant.collectionName,
+  });
+  reinforcement.start();
+  const stopReinforcement = () => {
+    void reinforcement.stop();
+  };
+  process.once('SIGTERM', stopReinforcement);
+  process.once('SIGINT', stopReinforcement);
+  process.once('beforeExit', stopReinforcement);
 
   registerMemoryTools(server, {
     service: memoryService,
     sessionPat,
     auditor,
     dataDir: config.storage.dataDir,
+    reinforcement,
   });
 
   const sessionId = createId();

@@ -2,7 +2,12 @@ import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promise
 import { join } from 'node:path';
 import { createId } from '@paralleldrive/cuid2';
 import type { AgentScope } from '../auth/types.js';
-import { DEFAULT_RETENTION, DEFAULT_RULES_INDEX_BODY, getDefaultQuota } from './defaults.js';
+import {
+  DEFAULT_DEDUP_THRESHOLD,
+  DEFAULT_RETENTION,
+  DEFAULT_RULES_INDEX_BODY,
+  getDefaultQuota,
+} from './defaults.js';
 import type {
   Namespace,
   NamespaceMember,
@@ -18,6 +23,7 @@ export interface CreateNamespaceSpec {
   owner_scopes: AgentScope[];
   added_by?: string;
   retention_policy?: RetentionPolicy;
+  dedup_threshold?: number;
   quota?: NamespaceQuota;
   now?: () => Date;
   env?: NodeJS.ProcessEnv;
@@ -67,6 +73,7 @@ export async function createNamespaceSkeleton(
     owner_agent_id: spec.owner_agent_id,
     visibility: 'private',
     retention_policy: spec.retention_policy ?? DEFAULT_RETENTION,
+    dedup_threshold: spec.dedup_threshold ?? DEFAULT_DEDUP_THRESHOLD,
     quota: spec.quota ?? getDefaultQuota(spec.env),
     created_at: now,
     updated_at: now,

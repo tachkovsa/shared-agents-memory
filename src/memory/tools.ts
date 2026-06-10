@@ -4,6 +4,7 @@ import type { AuthAuditWriter } from '../auth/audit.js';
 import { AuthError, type RequestContext } from '../auth/request-context.js';
 import { authorizeNamespaceAccess } from '../auth/resolve-request.js';
 import type { AgentPat, AgentScope } from '../auth/types.js';
+import type { ReinforcementBuffer } from './reinforcement.js';
 import { MemoryNotFoundError, MemoryService, MemoryValidationError } from './service.js';
 import { MEMORY_MAX_CONTENT_LENGTH, MEMORY_MAX_TAGS } from './types.js';
 
@@ -12,6 +13,8 @@ export interface MemoryToolDeps {
   sessionPat: AgentPat;
   auditor: AuthAuditWriter;
   dataDir: string;
+  /** Shared reinforcement buffer; get/search hits bump retrieval_count (ADR-0006 §3.3). */
+  reinforcement?: ReinforcementBuffer;
 }
 
 interface AuthDecision {
@@ -49,7 +52,7 @@ function validationErrorResponse(err: MemoryValidationError) {
 }
 
 export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): void {
-  const { service, sessionPat, auditor, dataDir } = deps;
+  const { service, sessionPat, auditor, dataDir, reinforcement } = deps;
 
   async function authorize(
     toolName: string,
@@ -119,7 +122,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
       if (!ctx) return authErrorResponse(error!);
 
       try {
-        const record = await service.store({
+        const { record, outcome, matchedExistingId } = await service.store({
           namespace: ctx.namespaceId,
           agentId: ctx.agentId,
           content: input.content,
@@ -129,7 +132,12 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
           source: input.source,
           id: input.id,
         });
-        return jsonResponse({ id: record.id, created_at: record.createdAt });
+        return jsonResponse({
+          id: record.id,
+          outcome,
+          matched_existing_id: matchedExistingId,
+          created_at: record.createdAt,
+        });
       } catch (err) {
         if (err instanceof MemoryValidationError) return validationErrorResponse(err);
         throw err;
@@ -167,6 +175,10 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
         tags: input.tags,
       });
 
+      for (const result of results) {
+        reinforcement?.record(result.memory.id);
+      }
+
       return jsonResponse(results);
     },
   );
@@ -184,6 +196,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
 
       try {
         const memory = await service.get({ namespace: ctx.namespaceId, id: input.id });
+        reinforcement?.record(memory.id);
         return jsonResponse(memory);
       } catch (err) {
         if (err instanceof MemoryNotFoundError) {
