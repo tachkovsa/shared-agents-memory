@@ -1,24 +1,43 @@
 # syntax=docker/dockerfile:1.7
-# Multi-stage build for the shared-agents-memory MCP server.
+# Multi-stage build for the shared-agents-memory MCP server (+ optional admin console).
 #
-# The runtime image is intended for the HTTP transport (ADR-0003 §3.4).
+# The runtime image serves the HTTP transport (ADR-0003 §3.4) and, when
+# ADMIN_ENABLED=true, the admin console (ADR-0008) on a separate port.
 # stdio mode is supported for local dev outside Docker (`npm run dev`).
-# Until issue #22 ships the HTTP transport, the docker-compose `mcp` service
-# is parked behind the `http` profile and stays inactive by default.
+#
+# Base image is Debian slim (glibc), not Alpine (musl): the admin console pulls
+# native modules (better-sqlite3, @node-rs/argon2) whose prebuilt binaries
+# target glibc. glibc avoids a source compile in the builder.
 
-ARG NODE_VERSION=20-alpine
+ARG NODE_VERSION=20-bookworm-slim
 
 # ---------- builder ----------
 FROM node:${NODE_VERSION} AS builder
 
 WORKDIR /app
 
+# Toolchain for native modules. @node-rs/argon2 ships prebuilt binaries, but
+# better-sqlite3 compiles from source when no prebuilt matches the build arch
+# (e.g. linux/arm64). These live in the builder only — the runtime stays slim
+# and receives the already-compiled .node files via the node_modules copy.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY package.json package-lock.json ./
-RUN npm ci
+# rollup and @tailwindcss/oxide pull platform-specific native binaries via
+# optionalDependencies. A macOS-generated lockfile pins the darwin variants and
+# npm won't backfill the linux ones (npm/cli#4828), so `npm ci` / `npm install`
+# leave rollup's native binding missing in the container. Dropping the lockfile
+# forces a clean platform-correct resolution — works in local Docker (arm64) and
+# GHA (x64) alike. package.json ranges still bound the versions.
+RUN rm -f package-lock.json && npm install --no-audit --no-fund
 
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build
+
+# Build the server (tsc -> dist) and the admin SPA (vite -> dist/admin-public).
+RUN npm run build && npm run build:web
 
 # Drop dev dependencies in-place so they can be copied wholesale to runtime.
 RUN npm prune --omit=dev
