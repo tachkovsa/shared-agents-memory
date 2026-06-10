@@ -37,6 +37,8 @@ export interface DecaySweepStats {
 interface PendingPayloadWrite {
   id: string;
   payload: Record<string, unknown>;
+  /** When set, this write is a soft-delete: count + audit only after it lands. */
+  softDelete?: { lastRetrievedAt: string | null };
 }
 
 /**
@@ -164,12 +166,12 @@ export class DecaySweeper {
         // Operator override: immortal points never decay or delete (ADR-0006 §3.4).
         if (record.metadata?.['immortal'] === true) continue;
 
-        // Hard-delete tombstones past the grace period (§3.4).
+        // Hard-delete tombstones past the grace period (§3.4). Count only after
+        // the delete actually lands (below) — not here.
         if (record.deletedAt != null) {
           const deletedDays = (nowMs - Date.parse(record.deletedAt)) / MS_PER_DAY;
           if (deletedDays > lifecycle.hard_delete_grace_days) {
             hardDeleteIds.push(record.id);
-            hardDeleted += 1;
           }
           continue; // already tombstoned — no rescore
         }
@@ -184,23 +186,19 @@ export class DecaySweeper {
 
         const write: Record<string, unknown> = { decay_score: decay };
 
-        // Soft-delete never-retrieved points past the threshold (§3.4).
+        // Soft-delete never-retrieved points past the threshold (§3.4). The
+        // count + audit happen only after the write lands (see apply loop).
+        let softDelete: PendingPayloadWrite['softDelete'];
         if (
           lifecycle.soft_delete_after_days != null &&
           record.retrievalCount === 0 &&
           daysSince > lifecycle.soft_delete_after_days
         ) {
           write['deleted_at'] = nowIso;
-          softDeleted += 1;
-          await this.appendAudit(namespaceId, {
-            event: 'memory.soft_deleted',
-            point_id: record.id,
-            last_retrieved_at: record.lastRetrievedAt,
-            reason: 'decay',
-          });
+          softDelete = { lastRetrievedAt: record.lastRetrievedAt };
         }
 
-        payloadWrites.push({ id: record.id, payload: write });
+        payloadWrites.push({ id: record.id, payload: write, softDelete });
       }
 
       const next = page.next_page_offset;
@@ -208,31 +206,44 @@ export class DecaySweeper {
       offset = next as string | number | Record<string, unknown>;
     }
 
-    // Apply payload writes (rescore + soft-delete tombstones).
+    // Apply payload writes (rescore + soft-delete tombstones). A soft-delete is
+    // counted/audited only after its write succeeds — a swallowed failure must
+    // not claim a deletion that didn't happen. Soft-deletes use wait:true so
+    // success is meaningful; pure rescores stay wait:false (cheap, best-effort).
     for (const w of payloadWrites) {
       try {
         await this.qdrant.setPayload(this.collection, {
-          wait: false,
+          wait: w.softDelete ? true : false,
           payload: w.payload,
           points: [w.id],
         });
       } catch {
-        // best-effort per point
+        continue; // best-effort per point; do not count a failed soft-delete
+      }
+      if (w.softDelete) {
+        softDeleted += 1;
+        await this.appendAudit(namespaceId, {
+          event: 'memory.soft_deleted',
+          point_id: w.id,
+          last_retrieved_at: w.softDelete.lastRetrievedAt,
+          reason: 'decay',
+        });
       }
     }
     if (softDeleted > 0) lifecycleDeletesTotal.inc({ kind: 'soft' }, softDeleted);
 
-    // Physically remove tombstones past grace.
+    // Physically remove tombstones past grace. Count/audit only on success.
     if (hardDeleteIds.length > 0) {
       try {
-        await this.qdrant.delete(this.collection, { points: hardDeleteIds });
+        await this.qdrant.delete(this.collection, { wait: true, points: hardDeleteIds });
+        for (const id of hardDeleteIds) {
+          await this.appendAudit(namespaceId, { event: 'memory.hard_deleted', point_id: id });
+        }
+        hardDeleted = hardDeleteIds.length;
+        lifecycleDeletesTotal.inc({ kind: 'hard' }, hardDeleted);
       } catch {
-        // best-effort
+        // delete failed — nothing removed; leave hardDeleted at 0
       }
-      for (const id of hardDeleteIds) {
-        await this.appendAudit(namespaceId, { event: 'memory.hard_deleted', point_id: id });
-      }
-      lifecycleDeletesTotal.inc({ kind: 'hard' }, hardDeleteIds.length);
     }
 
     return { pointsScored, softDeleted, hardDeleted };
