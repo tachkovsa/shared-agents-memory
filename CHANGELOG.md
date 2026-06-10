@@ -9,6 +9,12 @@ and a GitHub Release via `.github/workflows/release.yml`.
 
 ### Added
 
+- **Admin BFF read API — namespaces** (ADR-0008/0009). Operator-authenticated
+  read endpoints the console will consume: `GET /api/admin/namespaces` (list) and
+  `GET /api/admin/namespaces/:id` (detail + members). Behind the session +
+  CSRF auth guard; an operator is an instance admin (no org scoping — that's the
+  private SaaS layer). First slice of the console BFF; PAT/memory/audit views follow.
+
 - **Configurable embedding dimension + Qdrant int8 quantization** (ADR-0010). New
   `EMBEDDINGS_DIMENSION` (default **1024**, was a hardcoded 4096) lets a deployment
   match its embedding model — the self-host CIS profile runs bge-m3 (1024-dim) over

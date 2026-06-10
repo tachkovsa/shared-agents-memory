@@ -7,6 +7,7 @@ import type { SessionService } from '../auth/session-service.js';
 import type { SetupTokenVerifier } from '../auth/setup-token.js';
 import type { OperatorRepository } from '../stores/types.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerNamespaceAdminRoutes } from './routes/namespaces.js';
 
 export const SESSION_COOKIE = 'sam_admin_session';
 export const CSRF_HEADER = 'x-csrf-token';
@@ -32,6 +33,8 @@ export interface AdminAppOptions {
   staticDir?: string;
   /** Gate first-operator creation behind a one-time token (ADR-0007 §3.4). Omit to leave /setup open. */
   setupTokens?: SetupTokenVerifier;
+  /** Engine data dir — enables the read-only namespace/PAT operator views. Omit in unit tests that don't need them. */
+  dataDir?: string;
 }
 
 /**
@@ -55,6 +58,10 @@ export async function createAdminApp(opts: AdminAppOptions): Promise<FastifyInst
     loginRateLimit: opts.loginRateLimit ?? { max: 10, timeWindow: '1 minute' },
     setupTokens: opts.setupTokens,
   });
+
+  if (opts.dataDir) {
+    registerNamespaceAdminRoutes(app, { dataDir: opts.dataDir, requireAuth });
+  }
 
   if (opts.staticDir) {
     await registerSpa(app, opts.staticDir);

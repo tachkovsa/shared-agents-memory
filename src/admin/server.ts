@@ -45,6 +45,7 @@ export async function startAdminServer(opts: AdminServerOptions): Promise<AdminS
     trustProxy: opts.trustProxy ?? false,
     staticDir: resolveStaticDir(opts.staticDir),
     setupTokens,
+    dataDir: opts.dataDir,
   });
   app.addHook('onClose', () => {
     db.close();
