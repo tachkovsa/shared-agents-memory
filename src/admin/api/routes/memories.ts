@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { MemoryNotFoundError, type MemoryService } from '../../../memory/service.js';
 import type { MemoryRecord } from '../../../memory/types.js';
-import { loadNamespace } from '../../../namespaces/store.js';
+import { isValidNamespaceId, loadNamespace } from '../../../namespaces/store.js';
 import type { PreHandler } from '../app.js';
 
 export interface MemoryAdminRoutesDeps {
@@ -23,6 +23,9 @@ export function registerMemoryAdminRoutes(
   const { memoryService, dataDir, requireAuth } = deps;
 
   async function namespaceExists(id: string): Promise<boolean> {
+    // Validate before touching the filesystem — an unchecked id with encoded
+    // slashes / `..` could otherwise escape dataDir/namespaces/.
+    if (!isValidNamespaceId(id)) return false;
     return (await loadNamespace(dataDir, id)) !== null;
   }
 
@@ -40,7 +43,9 @@ export function registerMemoryAdminRoutes(
       const { memories, nextCursor } = await memoryService.list({
         namespace: req.params.id,
         limit,
-        cursor: req.query.cursor,
+        // Coerce to string: Fastify's query parser can yield arrays/objects
+        // (?cursor=a&cursor=b, ?cursor[x]=y) which must not reach Qdrant raw.
+        cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined,
         includeDeleted: req.query.include_deleted === 'true',
       });
       return { memories: memories.map(view), next_cursor: nextCursor };
