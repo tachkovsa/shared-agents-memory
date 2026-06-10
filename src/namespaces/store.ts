@@ -214,7 +214,14 @@ export async function saveMembers(
 // share/unshare requests can't clobber each other (parity with the rules store).
 const memberLocks = new Map<string, Promise<void>>();
 
-async function withMembersLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+/**
+ * Run `fn` holding the per-namespace member lock. Exported so every writer of
+ * `_members.json` (admin BFF, MCP tools, prune) serializes through the SAME lock
+ * (single process → single module instance → shared map). Do NOT nest calls for
+ * the same id — the inner acquire would deadlock; call the already-locked
+ * `upsertMember`/`removeMember` instead.
+ */
+export async function withMembersLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
   const previous = memberLocks.get(id) ?? Promise.resolve();
   let release!: () => void;
   const next = new Promise<void>((resolve) => {
@@ -317,14 +324,9 @@ export async function pruneOrphanedMembers(
   const result: { namespaceId: string; removed: number }[] = [];
 
   for (const id of ids) {
-    const members = await loadMembers(dataDir, id);
-    if (!members) continue;
-    const filtered = members.filter((m) => m.agent_id !== revokedAgentIdentity);
-    const removed = members.length - filtered.length;
-    if (removed > 0) {
-      await saveMembers(dataDir, id, filtered);
-      result.push({ namespaceId: id, removed });
-    }
+    // Route through the locked helper so prune can't race a concurrent share.
+    const removed = await removeMember(dataDir, id, revokedAgentIdentity);
+    if (removed > 0) result.push({ namespaceId: id, removed });
   }
 
   return result;

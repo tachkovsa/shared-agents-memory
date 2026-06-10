@@ -246,7 +246,7 @@ function CreateNamespaceModal({
   );
 }
 
-const SHARE_SCOPES: AgentScope[] = ['memory:read', 'memory:write', 'memory:delete', 'rules:read'];
+const SHARE_SCOPES: AgentScope[] = ['memory:read', 'memory:write', 'memory:delete', 'rules:read', 'rules:write'];
 
 function ShareModal({
   pending,

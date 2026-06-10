@@ -128,12 +128,18 @@ export function registerNamespaceAdminRoutes(
     '/api/admin/namespaces/:id/members',
     { preHandler: requireAuth },
     async (req, reply) => {
-      if (!isValidNamespaceId(req.params.id) || (await loadNamespace(dataDir, req.params.id)) === null) {
+      const ns = isValidNamespaceId(req.params.id) ? await loadNamespace(dataDir, req.params.id) : null;
+      if (!ns) {
         return reply.code(404).send({ error: 'not_found' });
       }
       const parsed = shareNamespaceSchema.safeParse(req.body);
       if (!parsed.success) {
         return reply.code(400).send({ error: 'invalid_input', issues: parsed.error.issues });
+      }
+      // The owner's membership is set at creation; sharing must never overwrite or
+      // downgrade it (SHAREABLE_SCOPES omits namespace:admin → would lock the owner out).
+      if (parsed.data.agent_id === ns.owner_agent_id) {
+        return reply.code(400).send({ error: 'cannot_modify_owner' });
       }
       // Locked read-modify-write — concurrent share/unshare can't clobber each other.
       const member = await upsertMember(dataDir, req.params.id, {
@@ -150,8 +156,12 @@ export function registerNamespaceAdminRoutes(
     '/api/admin/namespaces/:id/members/:agentId',
     { preHandler: requireAuth },
     async (req, reply) => {
-      if (!isValidNamespaceId(req.params.id) || (await loadNamespace(dataDir, req.params.id)) === null) {
+      const ns = isValidNamespaceId(req.params.id) ? await loadNamespace(dataDir, req.params.id) : null;
+      if (!ns) {
         return reply.code(404).send({ error: 'not_found' });
+      }
+      if (req.params.agentId === ns.owner_agent_id) {
+        return reply.code(400).send({ error: 'cannot_modify_owner' });
       }
       const removed = await removeMember(dataDir, req.params.id, req.params.agentId);
       return { removed, agent_id: req.params.agentId };

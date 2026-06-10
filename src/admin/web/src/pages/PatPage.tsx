@@ -26,6 +26,7 @@ export function PatPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [secret, setSecret] = useState<{ pat: Pat; secret: string } | null>(null);
   const [revoking, setRevoking] = useState<Pat | null>(null);
+  const [rotating, setRotating] = useState<Pat | null>(null);
 
   return (
     <>
@@ -91,18 +92,7 @@ export function PatPage() {
                     <div className="row row-actions" style={{ justifyContent: 'flex-end' }}>
                       {!p.is_revoked && (
                         <>
-                          <button
-                            className="btn btn-sm btn-secondary"
-                            disabled={rotate.isPending}
-                            onClick={async () => {
-                              try {
-                                const res = await rotate.mutateAsync(p.id);
-                                setSecret(res);
-                              } catch (e) {
-                                toast(e instanceof ApiError ? e.code : 'Ошибка ротации');
-                              }
-                            }}
-                          >
+                          <button className="btn btn-sm btn-secondary" onClick={() => setRotating(p)}>
                             <ArrowsClockwise size={15} /> Ротация
                           </button>
                           <button className="btn btn-sm btn-danger-ghost" onClick={() => setRevoking(p)}>
@@ -170,6 +160,44 @@ export function PatPage() {
             <Warning size={19} />
             <div>
               Отзыв необратим. Агент <b>{revoking.agent_identity}</b> сразу потеряет доступ. Остальные ключи не затрагиваются.
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {rotating && (
+        <Modal
+          title="Ротация ключа?"
+          subtitle={`${rotating.display_name} (${rotating.token_prefix}…)`}
+          onClose={() => setRotating(null)}
+          footer={
+            <>
+              <button className="btn btn-secondary" onClick={() => setRotating(null)}>
+                Отмена
+              </button>
+              <button
+                className="btn btn-primary"
+                disabled={rotate.isPending}
+                onClick={async () => {
+                  try {
+                    const res = await rotate.mutateAsync(rotating.id);
+                    setRotating(null);
+                    setSecret(res);
+                  } catch (e) {
+                    toast(e instanceof ApiError ? e.code : 'Ошибка ротации');
+                  }
+                }}
+              >
+                Ротировать
+              </button>
+            </>
+          }
+        >
+          <div className="callout warn">
+            <Warning size={19} />
+            <div>
+              Старый секрет будет <b>сразу отозван</b> — агент <b>{rotating.agent_identity}</b> перестанет работать,
+              пока вы не пропишете новый. Новый секрет покажется один раз.
             </div>
           </div>
         </Modal>
