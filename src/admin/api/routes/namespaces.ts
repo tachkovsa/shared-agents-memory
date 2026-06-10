@@ -1,16 +1,32 @@
 import type { FastifyInstance } from 'fastify';
 import {
+  createNamespaceSkeleton,
   isValidNamespaceId,
   listNamespaceIds,
   loadMembers,
   loadNamespace,
+  NamespaceExistsError,
+  saveMembers,
 } from '../../../namespaces/store.js';
+import type { AgentScope } from '../../../auth/types.js';
+import type { NamespaceMember } from '../../../namespaces/types.js';
+import { createNamespaceSchema, shareNamespaceSchema } from '../../shared/schemas.js';
 import type { PreHandler } from '../app.js';
 
 export interface NamespaceAdminRoutesDeps {
   dataDir: string;
   requireAuth: PreHandler;
 }
+
+/** Scopes the owner (creator) receives on a new namespace — full control sans service:admin. */
+const OWNER_SCOPES: AgentScope[] = [
+  'memory:read',
+  'memory:write',
+  'memory:delete',
+  'rules:read',
+  'rules:write',
+  'namespace:admin',
+];
 
 /**
  * Read-only operator views over namespaces (ADR-0008 BFF, ADR-0009 OSS scope:
@@ -72,6 +88,82 @@ export function registerNamespaceAdminRoutes(
           added_at: m.added_at,
         })),
       };
+    },
+  );
+
+  // Create a namespace (operator-driven onboarding; mirrors MCP namespace_create).
+  app.post('/api/admin/namespaces', { preHandler: requireAuth }, async (req, reply) => {
+    const parsed = createNamespaceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid_input', issues: parsed.error.issues });
+    }
+    try {
+      const ns = await createNamespaceSkeleton(dataDir, {
+        id: parsed.data.id,
+        display_name: parsed.data.display_name,
+        owner_agent_id: parsed.data.owner_agent_id,
+        owner_scopes: OWNER_SCOPES,
+        added_by: `operator:${req.principal!.operatorId}`,
+      });
+      return reply.code(201).send({
+        id: ns.id,
+        display_name: ns.display_name,
+        owner_agent_id: ns.owner_agent_id,
+        retention_policy: ns.retention_policy,
+        dedup_threshold: ns.dedup_threshold,
+        quota: ns.quota,
+        created_at: ns.created_at,
+        updated_at: ns.updated_at,
+      });
+    } catch (err) {
+      if (err instanceof NamespaceExistsError) {
+        return reply.code(409).send({ error: 'namespace_exists' });
+      }
+      throw err;
+    }
+  });
+
+  // Share access: add (or update the scopes of) a member.
+  app.post<{ Params: { id: string } }>(
+    '/api/admin/namespaces/:id/members',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      if (!isValidNamespaceId(req.params.id) || (await loadNamespace(dataDir, req.params.id)) === null) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const parsed = shareNamespaceSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: 'invalid_input', issues: parsed.error.issues });
+      }
+      const members = (await loadMembers(dataDir, req.params.id)) ?? [];
+      const now = new Date().toISOString();
+      const existing = members.find((m) => m.agent_id === parsed.data.agent_id);
+      const member: NamespaceMember = {
+        agent_id: parsed.data.agent_id,
+        scopes: parsed.data.scopes,
+        added_by: existing?.added_by ?? `operator:${req.principal!.operatorId}`,
+        added_at: existing?.added_at ?? now,
+      };
+      const next = existing
+        ? members.map((m) => (m.agent_id === member.agent_id ? member : m))
+        : [...members, member];
+      await saveMembers(dataDir, req.params.id, next);
+      return reply.code(201).send(member);
+    },
+  );
+
+  // Revoke a member's access.
+  app.delete<{ Params: { id: string; agentId: string } }>(
+    '/api/admin/namespaces/:id/members/:agentId',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      if (!isValidNamespaceId(req.params.id) || (await loadNamespace(dataDir, req.params.id)) === null) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const members = (await loadMembers(dataDir, req.params.id)) ?? [];
+      const next = members.filter((m) => m.agent_id !== req.params.agentId);
+      await saveMembers(dataDir, req.params.id, next);
+      return { removed: members.length - next.length, agent_id: req.params.agentId };
     },
   );
 }

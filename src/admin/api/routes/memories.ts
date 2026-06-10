@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import { MemoryNotFoundError, type MemoryService } from '../../../memory/service.js';
+import { MemoryNotFoundError, MemoryValidationError, type MemoryService } from '../../../memory/service.js';
 import type { MemoryRecord } from '../../../memory/types.js';
 import { isValidNamespaceId, loadNamespace } from '../../../namespaces/store.js';
+import { searchMemoryQuerySchema, writeMemorySchema } from '../../shared/schemas.js';
 import type { PreHandler } from '../app.js';
 
 export interface MemoryAdminRoutesDeps {
@@ -49,6 +50,62 @@ export function registerMemoryAdminRoutes(
         includeDeleted: req.query.include_deleted === 'true',
       });
       return { memories: memories.map(view), next_cursor: nextCursor };
+    },
+  );
+
+  // Semantic search (Qdrant vector search; replaces the prototype's client-side ranking).
+  app.get<{ Params: { id: string }; Querystring: { q?: string; limit?: string } }>(
+    '/api/admin/namespaces/:id/memories/search',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      if (!(await namespaceExists(req.params.id))) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const parsed = searchMemoryQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: 'invalid_input', issues: parsed.error.issues });
+      }
+      const started = Date.now();
+      const hits = await memoryService.search({
+        namespace: req.params.id,
+        query: parsed.data.q,
+        limit: parsed.data.limit ?? 20,
+      });
+      return {
+        results: hits.map((h) => ({ ...view(h.memory), score: h.score })),
+        latency_ms: Date.now() - started,
+      };
+    },
+  );
+
+  // Operator write — useful for seeding/correcting; agents normally write via MCP.
+  app.post<{ Params: { id: string } }>(
+    '/api/admin/namespaces/:id/memories',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      if (!(await namespaceExists(req.params.id))) {
+        return reply.code(404).send({ error: 'not_found' });
+      }
+      const parsed = writeMemorySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: 'invalid_input', issues: parsed.error.issues });
+      }
+      try {
+        const result = await memoryService.store({
+          namespace: req.params.id,
+          agentId: parsed.data.agent_id,
+          content: parsed.data.content,
+          tags: parsed.data.tags,
+          summary: parsed.data.summary,
+          source: parsed.data.source,
+        });
+        return reply.code(201).send(view(result.record));
+      } catch (err) {
+        if (err instanceof MemoryValidationError) {
+          return reply.code(400).send({ error: 'invalid_input', field: err.field });
+        }
+        throw err;
+      }
     },
   );
 

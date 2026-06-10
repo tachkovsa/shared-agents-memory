@@ -13,6 +13,7 @@ import type { MemoryService } from '../../memory/service.js';
 import { makeOrphanPruneCallback } from '../../namespaces/tools.js';
 import { registerAuditAdminRoutes } from './routes/audit.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerBillingRoutes } from './routes/billing.js';
 import { registerMemoryAdminRoutes } from './routes/memories.js';
 import { registerNamespaceAdminRoutes } from './routes/namespaces.js';
 import { registerObservabilityRoutes } from './routes/observability.js';
@@ -79,6 +80,8 @@ export async function createAdminApp(opts: AdminAppOptions): Promise<FastifyInst
     loginRateLimit: opts.loginRateLimit ?? { max: 10, timeWindow: '1 minute' },
     setupTokens: opts.setupTokens,
   });
+
+  registerBillingRoutes(app, { requireAuth });
 
   if (opts.dataDir) {
     registerNamespaceAdminRoutes(app, { dataDir: opts.dataDir, requireAuth });

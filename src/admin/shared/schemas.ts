@@ -37,3 +37,40 @@ export const loginSchema = z.object({
 
 export type SetupInput = z.infer<typeof setupSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+
+// ── namespace + memory mutations (operator BFF) ──────────────────────────────
+
+const scopesSchema = z.array(z.enum(ALL_SCOPES as readonly [AgentScope, ...AgentScope[]])).min(1);
+
+/** kebab-case, 3–64 chars — mirrors NAMESPACE_ID_REGEX in namespaces/store.ts. */
+export const namespaceIdSchema = z
+  .string()
+  .regex(/^[a-z][a-z0-9-]{1,62}[a-z0-9]$/, 'namespace id must be kebab-case (3–64 chars)');
+
+export const createNamespaceSchema = z.object({
+  id: namespaceIdSchema,
+  display_name: z.string().trim().min(1).max(128),
+  owner_agent_id: z.string().trim().min(1).max(128),
+});
+
+export const shareNamespaceSchema = z.object({
+  agent_id: z.string().trim().min(1).max(128),
+  scopes: scopesSchema,
+});
+
+export const writeMemorySchema = z.object({
+  content: z.string().trim().min(1).max(20_000),
+  agent_id: z.string().trim().min(1).max(128),
+  tags: z.array(z.string().trim().min(1).max(64)).max(32).optional(),
+  summary: z.string().trim().max(2_000).optional(),
+  source: z.string().trim().max(512).optional(),
+});
+
+export const searchMemoryQuerySchema = z.object({
+  q: z.string().trim().min(1).max(1_000),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+});
+
+export type CreateNamespaceInput = z.infer<typeof createNamespaceSchema>;
+export type ShareNamespaceInput = z.infer<typeof shareNamespaceSchema>;
+export type WriteMemoryInput = z.infer<typeof writeMemorySchema>;

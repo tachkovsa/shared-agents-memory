@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { PatStore } from '../../../auth/pat-store.js';
-import { PatNotFoundError } from '../../../auth/pat-store.js';
+import { PatNotFoundError, PatRotationStateError } from '../../../auth/pat-store.js';
 import type { AgentPat } from '../../../auth/types.js';
 import { createPatSchema, revokePatSchema } from '../../shared/schemas.js';
 import type { PreHandler } from '../app.js';
@@ -80,6 +80,32 @@ export function registerPatAdminRoutes(app: FastifyInstance, deps: PatAdminRoute
         if (err instanceof PatNotFoundError) {
           return reply.code(404).send({ error: 'not_found' });
         }
+        throw err;
+      }
+    },
+  );
+
+  // Rotate: mint a fresh secret for the same agent/scopes/namespaces and revoke
+  // the old token. The new secret is shown ONCE, like create.
+  app.post<{ Params: { id: string } }>(
+    '/api/admin/pats/:id/rotate',
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const current = patStore.get(req.params.id);
+      if (!current) return reply.code(404).send({ error: 'not_found' });
+      try {
+        const result = await patStore.rotate(req.params.id, {
+          display_name: current.display_name,
+          agent_identity: current.agent_identity,
+          allowed_namespaces: current.allowed_namespaces,
+          scopes: current.scopes,
+          created_by: `operator:${req.principal!.operatorId}`,
+          expires_at: current.expires_at,
+        });
+        return reply.code(201).send({ pat: redactPat(result.pat), secret: result.secret });
+      } catch (err) {
+        if (err instanceof PatNotFoundError) return reply.code(404).send({ error: 'not_found' });
+        if (err instanceof PatRotationStateError) return reply.code(409).send({ error: 'pat_revoked' });
         throw err;
       }
     },
