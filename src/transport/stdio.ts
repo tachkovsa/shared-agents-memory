@@ -22,10 +22,13 @@ import type { Config } from '../config.js';
 import { EmbeddingClient } from '../embeddings.js';
 import {
   DEDUP_DEFAULT_THRESHOLD,
+  DEFAULT_DECAY_WEIGHT,
+  DecaySweeper,
   MemoryService,
   ReinforcementBuffer,
   registerMemoryTools,
 } from '../memory/index.js';
+import { resolveLifecycle } from '../namespaces/defaults.js';
 import { loadNamespace } from '../namespaces/store.js';
 import { makeOrphanPruneCallback, registerNamespaceTools } from '../namespaces/tools.js';
 import { initCollection, quantizationSearchParams } from '../qdrant.js';
@@ -87,9 +90,14 @@ export async function runStdioTransport(deps: StdioDeps): Promise<void> {
     qdrant,
     embeddings,
     collection: config.qdrant.collectionName,
+    dataDir: config.storage.dataDir,
     loadDedupThreshold: async (ns) =>
       (await loadNamespace(config.storage.dataDir, ns))?.dedup_threshold ??
       DEDUP_DEFAULT_THRESHOLD,
+    loadDecayWeight: async (ns) => {
+      const namespace = await loadNamespace(config.storage.dataDir, ns);
+      return namespace ? resolveLifecycle(namespace).decay_weight : DEFAULT_DECAY_WEIGHT;
+    },
     searchParams: quantizationSearchParams(config.qdrant.quantization),
   });
 
@@ -98,12 +106,19 @@ export async function runStdioTransport(deps: StdioDeps): Promise<void> {
     collection: config.qdrant.collectionName,
   });
   reinforcement.start();
-  const stopReinforcement = () => {
+  const decaySweeper = new DecaySweeper({
+    qdrant,
+    collection: config.qdrant.collectionName,
+    dataDir: config.storage.dataDir,
+  });
+  decaySweeper.start();
+  const stopLifecycle = () => {
     void reinforcement.stop();
+    void decaySweeper.stop();
   };
-  process.once('SIGTERM', stopReinforcement);
-  process.once('SIGINT', stopReinforcement);
-  process.once('beforeExit', stopReinforcement);
+  process.once('SIGTERM', stopLifecycle);
+  process.once('SIGINT', stopLifecycle);
+  process.once('beforeExit', stopLifecycle);
 
   registerMemoryTools(server, {
     service: memoryService,

@@ -344,3 +344,56 @@ describe('memory_delete', () => {
     expect(JSON.parse(result.content[0].text).error).toBe('not_found');
   });
 });
+
+describe('memory_restore', () => {
+  const ID = '11111111-1111-1111-1111-111111111111';
+
+  it('clears the tombstone on a soft-deleted memory', async () => {
+    const { client, fake } = await setupHarness({}, {
+      retrieve: vi.fn(async () => [
+        {
+          id: ID,
+          payload: {
+            namespace: 'personal',
+            agent_id: 'agent_session',
+            kind: MEMORY_KIND,
+            content: 'hi',
+            tags: [],
+            created_at: 'now',
+            updated_at: 'now',
+            deleted_at: '2026-06-01T00:00:00.000Z',
+          },
+        },
+      ]),
+    });
+
+    const body = parsePayload(
+      (await client.callTool({
+        name: 'memory_restore',
+        arguments: { namespace: 'personal', id: ID },
+      })) as never,
+    );
+    expect(body.id).toBe(ID);
+    expect(body.deletedAt).toBeNull();
+    expect(fake.setPayload).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns not_found if absent', async () => {
+    const { client } = await setupHarness();
+    const result = (await client.callTool({
+      name: 'memory_restore',
+      arguments: { namespace: 'personal', id: ID },
+    })) as { content: { text: string }[]; isError?: boolean };
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text).error).toBe('not_found');
+  });
+
+  it('requires memory:write scope', async () => {
+    const { client } = await setupHarness({ sessionScopes: ['memory:read'] });
+    const result = (await client.callTool({
+      name: 'memory_restore',
+      arguments: { namespace: 'personal', id: ID },
+    })) as { content: { text: string }[]; isError?: boolean };
+    expect(result.isError).toBe(true);
+  });
+});
