@@ -22,11 +22,14 @@ import type { Config } from '../config.js';
 import { EmbeddingClient } from '../embeddings.js';
 import {
   DEDUP_DEFAULT_THRESHOLD,
+  DEFAULT_DECAY_WEIGHT,
+  DecaySweeper,
   MemoryService,
   ReinforcementBuffer,
   registerMemoryTools,
 } from '../memory/index.js';
 import { StalenessAuditor } from '../lifecycle/staleness.js';
+import { resolveLifecycle } from '../namespaces/defaults.js';
 import { loadNamespace } from '../namespaces/store.js';
 import { makeOrphanPruneCallback, registerNamespaceTools } from '../namespaces/tools.js';
 import { initCollection, quantizationSearchParams } from '../qdrant.js';
@@ -88,9 +91,14 @@ export async function runStdioTransport(deps: StdioDeps): Promise<void> {
     qdrant,
     embeddings,
     collection: config.qdrant.collectionName,
+    dataDir: config.storage.dataDir,
     loadDedupThreshold: async (ns) =>
       (await loadNamespace(config.storage.dataDir, ns))?.dedup_threshold ??
       DEDUP_DEFAULT_THRESHOLD,
+    loadDecayWeight: async (ns) => {
+      const namespace = await loadNamespace(config.storage.dataDir, ns);
+      return namespace ? resolveLifecycle(namespace).decay_weight : DEFAULT_DECAY_WEIGHT;
+    },
     searchParams: quantizationSearchParams(config.qdrant.quantization),
   });
 
@@ -99,6 +107,12 @@ export async function runStdioTransport(deps: StdioDeps): Promise<void> {
     collection: config.qdrant.collectionName,
   });
   reinforcement.start();
+  const decaySweeper = new DecaySweeper({
+    qdrant,
+    collection: config.qdrant.collectionName,
+    dataDir: config.storage.dataDir,
+  });
+  decaySweeper.start();
 
   const stalenessAuditor = new StalenessAuditor({
     qdrant,
@@ -109,6 +123,7 @@ export async function runStdioTransport(deps: StdioDeps): Promise<void> {
 
   const stopBackground = () => {
     void reinforcement.stop();
+    void decaySweeper.stop();
     void stalenessAuditor.stop();
   };
   process.once('SIGTERM', stopBackground);

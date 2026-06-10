@@ -33,6 +33,8 @@ import type { Config } from '../config.js';
 import { EmbeddingClient } from '../embeddings.js';
 import {
   DEDUP_DEFAULT_THRESHOLD,
+  DEFAULT_DECAY_WEIGHT,
+  DecaySweeper,
   MemoryService,
   ReinforcementBuffer,
   registerMemoryTools,
@@ -47,6 +49,7 @@ import {
   patActiveCount,
   patLookupsTotal,
 } from '../metrics/registry.js';
+import { resolveLifecycle } from '../namespaces/defaults.js';
 import { makeOrphanPruneCallback, registerNamespaceTools } from '../namespaces/tools.js';
 import { listNamespaceIds, loadNamespace } from '../namespaces/store.js';
 import { initCollection, quantizationSearchParams } from '../qdrant.js';
@@ -204,9 +207,14 @@ function createSession(
     qdrant,
     embeddings,
     collection: config.qdrant.collectionName,
+    dataDir: config.storage.dataDir,
     loadDedupThreshold: async (ns) =>
       (await loadNamespace(config.storage.dataDir, ns))?.dedup_threshold ??
       DEDUP_DEFAULT_THRESHOLD,
+    loadDecayWeight: async (ns) => {
+      const namespace = await loadNamespace(config.storage.dataDir, ns);
+      return namespace ? resolveLifecycle(namespace).decay_weight : DEFAULT_DECAY_WEIGHT;
+    },
     searchParams: quantizationSearchParams(config.qdrant.quantization),
   });
 
@@ -286,6 +294,14 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
     collection: config.qdrant.collectionName,
   });
   reinforcement.start();
+
+  // Per-namespace decay sweep (ADR-0006 §3.4) — one daily cron per process.
+  const decaySweeper = new DecaySweeper({
+    qdrant,
+    collection: config.qdrant.collectionName,
+    dataDir: config.storage.dataDir,
+  });
+  decaySweeper.start();
 
   // Shared staleness auditor (ADR-0006 §3.6) — one per process, nightly sweep.
   const stalenessAuditor = new StalenessAuditor({
@@ -701,6 +717,7 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
       clearInterval(memCountRefreshInterval);
       clearInterval(patCountRefreshInterval);
       void reinforcement.stop();
+      void decaySweeper.stop();
       void stalenessAuditor.stop();
       for (const [id] of sessions) {
         removeSession(id);

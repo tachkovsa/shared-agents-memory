@@ -160,3 +160,27 @@ export const stalenessAuditTotal = new Counter({
   labelNames: ['result'] as const,
   registers: [register],
 });
+
+// ── Lifecycle: decay sweep (ADR-0006 §3.4) ───────────────────────────────────
+
+/**
+ * Wall-clock duration of one full decay sweep across all namespaces.
+ * Buckets: 100ms, 500ms, 1s, 5s, 15s, 60s, 300s
+ */
+export const decaySweepDurationSeconds = new Histogram({
+  name: 'mem_decay_sweep_duration_seconds',
+  help: 'Duration of one full per-namespace decay sweep in seconds',
+  buckets: [0.1, 0.5, 1, 5, 15, 60, 300],
+  registers: [register],
+});
+
+/**
+ * Total lifecycle deletions by kind.
+ * kind ∈ soft | hard
+ */
+export const lifecycleDeletesTotal = new Counter({
+  name: 'mem_lifecycle_deletes_total',
+  help: 'Total lifecycle deletions by kind (soft | hard)',
+  labelNames: ['kind'] as const,
+  registers: [register],
+});
