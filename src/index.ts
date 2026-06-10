@@ -62,6 +62,12 @@ async function main(): Promise<void> {
       // agent-side lookups stay consistent in-process.
       patStore,
       memoryService: adminMemory,
+      observability: {
+        qdrant,
+        collection: config.qdrant.collectionName,
+        version: process.env['npm_package_version'] ?? '0.2.0',
+        getBreakerState: () => embeddings.getBreakerState?.() ?? 'unknown',
+      },
     });
     process.stderr.write(`[admin] console listening on ${admin.url}\n`);
   }
