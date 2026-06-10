@@ -49,6 +49,7 @@ import {
 import { makeOrphanPruneCallback, registerNamespaceTools } from '../namespaces/tools.js';
 import { listNamespaceIds, loadNamespace } from '../namespaces/store.js';
 import { initCollection, quantizationSearchParams } from '../qdrant.js';
+import { QuotaService } from '../quota/quota-service.js';
 import { registerRuleTools } from '../rules/index.js';
 import { omitDefaultForbiddenToolExecution } from './codex-compat.js';
 
@@ -180,6 +181,7 @@ function createSession(
   deps: HttpTransportDeps,
   auditor: AuthAuditWriter,
   reinforcement: ReinforcementBuffer,
+  quotaService: QuotaService,
   onSessionClosed: (sessionId: string) => void,
 ): SessionRecord {
   const { config, patStore, pepper, qdrant, embeddings } = deps;
@@ -215,6 +217,18 @@ function createSession(
     auditor,
     dataDir: config.storage.dataDir,
     reinforcement,
+    quota: quotaService,
+    countNamespaceMemories: async (ns: string) => {
+      const result = await qdrant.count(config.qdrant.collectionName, {
+        filter: {
+          must: [
+            { key: 'namespace', match: { value: ns } },
+            { key: 'kind', match: { value: 'episodic' } },
+          ],
+        },
+      });
+      return result.count;
+    },
   });
 
   const mcpSessionId = createId();
@@ -285,6 +299,10 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
     collection: config.qdrant.collectionName,
   });
   reinforcement.start();
+
+  // Shared quota service (issue #59) — one per process, so the per-namespace
+  // mutex and daily rollover are shared across sessions.
+  const quotaService = new QuotaService({ dataDir: config.storage.dataDir });
 
   // ── Session table ──────────────────────────────────────────────────────────
 
@@ -600,6 +618,7 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
       deps,
       auditor,
       reinforcement,
+      quotaService,
       (id) => {
         removeSession(id);
       },

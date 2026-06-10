@@ -144,3 +144,19 @@ export const memoryCount = new Gauge({
   labelNames: ['namespace'] as const,
   registers: [register],
 });
+
+// ── Quota (issue #59) ─────────────────────────────────────────────────────────
+
+/**
+ * Total quota rejections by limit name (issue #59).
+ * limit ∈ daily_writes | daily_searches | daily_embedding_tokens | max_memories
+ *
+ * Deliberately NOT labelled by namespace to keep cardinality low on a shared
+ * single-box deployment.
+ */
+export const quotaRejectionsTotal = new Counter({
+  name: 'mem_quota_rejections_total',
+  help: 'Total quota-exceeded rejections by limit kind',
+  labelNames: ['limit'] as const,
+  registers: [register],
+});

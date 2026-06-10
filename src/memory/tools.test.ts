@@ -11,6 +11,8 @@ import { PatStore } from '../auth/pat-store.js';
 import { ALL_SCOPES, type AgentPat, type AgentScope } from '../auth/types.js';
 import type { EmbeddingClient } from '../embeddings.js';
 import { createNamespaceSkeleton } from '../namespaces/store.js';
+import type { NamespaceQuota } from '../namespaces/types.js';
+import { QuotaService } from '../quota/quota-service.js';
 import { MemoryService } from './service.js';
 import { registerMemoryTools } from './tools.js';
 import { MEMORY_KIND } from './types.js';
@@ -342,5 +344,140 @@ describe('memory_delete', () => {
     })) as { content: { text: string }[]; isError?: boolean };
     expect(result.isError).toBe(true);
     expect(JSON.parse(result.content[0].text).error).toBe('not_found');
+  });
+});
+
+// ── Quota enforcement tests (issue #59) ──────────────────────────────────────
+
+function makeTightQuota(overrides: Partial<NamespaceQuota> = {}): NamespaceQuota {
+  return {
+    daily_writes: 1,
+    daily_searches: 1,
+    daily_embedding_tokens: 100_000,
+    max_memories: 100_000,
+    ...overrides,
+  };
+}
+
+/**
+ * Build a harness that injects a real QuotaService with the given quota wired
+ * into the 'personal' namespace skeleton.
+ */
+async function setupHarnessWithQuota(
+  quota: NamespaceQuota,
+  qdrantOverrides: Partial<FakeQdrant> = {},
+  countNamespaceMemoriesOverride?: (ns: string) => Promise<number>,
+): Promise<{ client: Client; fake: FakeQdrant; quotaService: QuotaService }> {
+  const patStore = await PatStore.open({ storePath, pepper: PEPPER });
+  const scopes = ALL_SCOPES;
+  const minted = await patStore.mint({
+    display_name: 'session',
+    agent_identity: 'agent_session',
+    allowed_namespaces: ['personal'],
+    scopes: [...scopes],
+    created_by: 'bootstrap',
+  });
+
+  await createNamespaceSkeleton(workDir, {
+    id: 'personal',
+    display_name: 'personal',
+    owner_agent_id: 'agent_session',
+    owner_scopes: [...scopes],
+    quota,
+  });
+
+  const auditor = new AuthAuditWriter({
+    path: join(workDir, '_auth', 'audit.jsonl'),
+    successSampleRate: 1,
+    random: () => 0,
+  });
+
+  const { client: qdrantClient, fake } = makeQdrant(qdrantOverrides);
+  const embeddings = makeEmbeddings();
+  const service = new MemoryService({
+    qdrant: qdrantClient,
+    embeddings,
+    collection: COLLECTION,
+  });
+
+  const quotaService = new QuotaService({ dataDir: workDir });
+
+  const server = new McpServer({ name: 'test', version: '0.0.0' });
+  registerMemoryTools(server, {
+    service,
+    sessionPat: minted.pat,
+    auditor,
+    dataDir: workDir,
+    quota: quotaService,
+    countNamespaceMemories: countNamespaceMemoriesOverride,
+  });
+
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'test-client', version: '0.0.0' });
+  await Promise.all([
+    server.connect(serverTransport),
+    client.connect(clientTransport),
+  ]);
+
+  return { client, fake, quotaService };
+}
+
+describe('memory_store — quota enforcement', () => {
+  it('returns quota_exceeded (isError) when daily_writes cap is 0 and does not persist', async () => {
+    const quota = makeTightQuota({ daily_writes: 0 });
+    const { client, fake } = await setupHarnessWithQuota(quota);
+
+    const result = (await client.callTool({
+      name: 'memory_store',
+      arguments: { namespace: 'personal', content: 'should be blocked' },
+    })) as { content: { text: string }[]; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    const body = JSON.parse(result.content[0].text);
+    expect(body.error).toBe('quota_exceeded');
+    expect(body.limit).toBe('daily_writes');
+    // Qdrant upsert must NOT have been called.
+    expect(fake.upsert).not.toHaveBeenCalled();
+  });
+
+  it('succeeds under cap and increments the write counter', async () => {
+    const quota = makeTightQuota({ daily_writes: 5 });
+    const { client, fake, quotaService } = await setupHarnessWithQuota(quota);
+
+    const result = parsePayload(
+      (await client.callTool({
+        name: 'memory_store',
+        arguments: { namespace: 'personal', content: 'hello' },
+      })) as never,
+    );
+    expect(result.outcome).toBe('inserted');
+    expect(fake.upsert).toHaveBeenCalledTimes(1);
+
+    // Verify the counter was recorded: attempting a write with cap=1 should now fail.
+    const overCapQuota = makeTightQuota({ daily_writes: 1 });
+    // Re-check directly using the service (same dataDir).
+    await expect(
+      quotaService.check('personal', 'write', { quota: overCapQuota }),
+    ).rejects.toMatchObject({ limit: 'daily_writes', used: 1 });
+  });
+
+  it('returns quota_exceeded for max_memories when count equals cap', async () => {
+    const cap = 3;
+    const quota = makeTightQuota({ max_memories: cap, daily_writes: 1_000 });
+    // Wire countNamespaceMemories to return exactly `cap` (at the limit).
+    const { client, fake } = await setupHarnessWithQuota(
+      quota,
+      {},
+      async () => cap,
+    );
+
+    const result = (await client.callTool({
+      name: 'memory_store',
+      arguments: { namespace: 'personal', content: 'blocked by max_memories' },
+    })) as { content: { text: string }[]; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0].text).limit).toBe('max_memories');
+    expect(fake.upsert).not.toHaveBeenCalled();
   });
 });
