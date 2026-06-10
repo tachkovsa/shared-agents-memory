@@ -6,8 +6,12 @@ import type { AuthProvider, Principal } from '../auth/auth-provider.js';
 import type { SessionService } from '../auth/session-service.js';
 import type { SetupTokenVerifier } from '../auth/setup-token.js';
 import type { OperatorRepository } from '../stores/types.js';
+import { AuthAuditWriter, auditPathForDataDir } from '../../auth/audit.js';
+import type { PatStore } from '../../auth/pat-store.js';
+import { makeOrphanPruneCallback } from '../../namespaces/tools.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerNamespaceAdminRoutes } from './routes/namespaces.js';
+import { registerPatAdminRoutes } from './routes/pats.js';
 
 export const SESSION_COOKIE = 'sam_admin_session';
 export const CSRF_HEADER = 'x-csrf-token';
@@ -35,6 +39,8 @@ export interface AdminAppOptions {
   setupTokens?: SetupTokenVerifier;
   /** Engine data dir — enables the read-only namespace/PAT operator views. Omit in unit tests that don't need them. */
   dataDir?: string;
+  /** Shared PatStore (already opened with the server pepper) — enables PAT management routes. */
+  patStore?: PatStore;
 }
 
 /**
@@ -61,6 +67,20 @@ export async function createAdminApp(opts: AdminAppOptions): Promise<FastifyInst
 
   if (opts.dataDir) {
     registerNamespaceAdminRoutes(app, { dataDir: opts.dataDir, requireAuth });
+  }
+
+  if (opts.patStore) {
+    // When the engine data dir is known, revoke prunes orphaned memberships
+    // exactly like MCP pat_revoke (ADR-0004) — same callback, fresh auditor.
+    const onRevoke =
+      opts.dataDir !== undefined
+        ? makeOrphanPruneCallback(
+            opts.patStore,
+            opts.dataDir,
+            new AuthAuditWriter({ path: auditPathForDataDir(opts.dataDir) }),
+          )
+        : undefined;
+    registerPatAdminRoutes(app, { patStore: opts.patStore, requireAuth, onRevoke });
   }
 
   if (opts.staticDir) {
