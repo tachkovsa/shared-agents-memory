@@ -116,12 +116,27 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
         .uuid()
         .optional()
         .describe('Optional caller-supplied ID for idempotent upsert'),
+      verifies_against: z
+        .object({
+          kind: z.enum(['file', 'url', 'git_commit']),
+          ref: z.string().min(1),
+          captured_at: z.string().datetime().optional(),
+          last_known_value: z.string().optional(),
+        })
+        .optional()
+        .describe(
+          'ADR-0006 §3.6 — opt-in reference the nightly staleness audit re-checks. ' +
+            'kind=file needs filesystem_audit_root on the namespace; ' +
+            'kind=url uses an HTTP HEAD probe; ' +
+            'kind=git_commit checks whether HEAD has moved past the commit.',
+        ),
     },
     async (input) => {
       const { ctx, error } = await authorize('memory_store', input.namespace, 'memory:write');
       if (!ctx) return authErrorResponse(error!);
 
       try {
+        const nowIso = new Date().toISOString();
         const { record, outcome, matchedExistingId } = await service.store({
           namespace: ctx.namespaceId,
           agentId: ctx.agentId,
@@ -131,6 +146,18 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
           tags: input.tags,
           source: input.source,
           id: input.id,
+          ...(input.verifies_against
+            ? {
+                verifiesAgainst: {
+                  kind: input.verifies_against.kind,
+                  ref: input.verifies_against.ref,
+                  capturedAt: input.verifies_against.captured_at ?? nowIso,
+                  ...(input.verifies_against.last_known_value !== undefined
+                    ? { lastKnownValue: input.verifies_against.last_known_value }
+                    : {}),
+                },
+              }
+            : {}),
         });
         return jsonResponse({
           id: record.id,

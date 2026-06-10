@@ -26,6 +26,7 @@ import {
   ReinforcementBuffer,
   registerMemoryTools,
 } from '../memory/index.js';
+import { StalenessAuditor } from '../lifecycle/staleness.js';
 import { loadNamespace } from '../namespaces/store.js';
 import { makeOrphanPruneCallback, registerNamespaceTools } from '../namespaces/tools.js';
 import { initCollection, quantizationSearchParams } from '../qdrant.js';
@@ -98,12 +99,21 @@ export async function runStdioTransport(deps: StdioDeps): Promise<void> {
     collection: config.qdrant.collectionName,
   });
   reinforcement.start();
-  const stopReinforcement = () => {
+
+  const stalenessAuditor = new StalenessAuditor({
+    qdrant,
+    collection: config.qdrant.collectionName,
+    dataDir: config.storage.dataDir,
+  });
+  stalenessAuditor.start();
+
+  const stopBackground = () => {
     void reinforcement.stop();
+    void stalenessAuditor.stop();
   };
-  process.once('SIGTERM', stopReinforcement);
-  process.once('SIGINT', stopReinforcement);
-  process.once('beforeExit', stopReinforcement);
+  process.once('SIGTERM', stopBackground);
+  process.once('SIGINT', stopBackground);
+  process.once('beforeExit', stopBackground);
 
   registerMemoryTools(server, {
     service: memoryService,

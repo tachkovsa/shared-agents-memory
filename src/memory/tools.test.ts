@@ -182,6 +182,72 @@ describe('memory_store', () => {
     })) as { content: { text: string }[]; isError?: boolean };
     expect(result.isError).toBe(true);
   });
+
+  it('persists verifies_against when provided', async () => {
+    const { client, fake } = await setupHarness();
+
+    const body = parsePayload(
+      (await client.callTool({
+        name: 'memory_store',
+        arguments: {
+          namespace: 'personal',
+          content: 'The Prisma schema is at prisma/schema.prisma',
+          verifies_against: {
+            kind: 'file',
+            ref: 'prisma/schema.prisma',
+            captured_at: '2026-06-10T00:00:00.000Z',
+            last_known_value: 'sha256:abc123',
+          },
+        },
+      })) as never,
+    );
+    expect(body.outcome).toBe('inserted');
+
+    expect(fake.upsert).toHaveBeenCalledTimes(1);
+    const [, upsertBody] = (fake.upsert.mock.calls[0] ?? []) as [
+      string,
+      { points: { payload: Record<string, unknown> }[] },
+    ];
+    const va = upsertBody.points[0].payload['verifies_against'] as Record<string, unknown>;
+    expect(va).toBeDefined();
+    expect(va['kind']).toBe('file');
+    expect(va['ref']).toBe('prisma/schema.prisma');
+    expect(va['captured_at']).toBe('2026-06-10T00:00:00.000Z');
+    expect(va['last_known_value']).toBe('sha256:abc123');
+  });
+
+  it('defaults captured_at to now when verifies_against omits it', async () => {
+    const { client, fake } = await setupHarness();
+
+    const beforeCall = Date.now();
+    parsePayload(
+      (await client.callTool({
+        name: 'memory_store',
+        arguments: {
+          namespace: 'personal',
+          content: 'API URL is https://api.example.com',
+          verifies_against: {
+            kind: 'url',
+            ref: 'https://api.example.com/health',
+            // no captured_at — should default to now
+          },
+        },
+      })) as never,
+    );
+    const afterCall = Date.now();
+
+    expect(fake.upsert).toHaveBeenCalledTimes(1);
+    const [, upsertBody] = (fake.upsert.mock.calls[0] ?? []) as [
+      string,
+      { points: { payload: Record<string, unknown> }[] },
+    ];
+    const va = upsertBody.points[0].payload['verifies_against'] as Record<string, unknown>;
+    expect(va).toBeDefined();
+    // captured_at should be a valid ISO string that falls within the call window.
+    const capturedAt = Date.parse(va['captured_at'] as string);
+    expect(capturedAt).toBeGreaterThanOrEqual(beforeCall);
+    expect(capturedAt).toBeLessThanOrEqual(afterCall + 1000); // 1s tolerance
+  });
 });
 
 describe('memory_search', () => {

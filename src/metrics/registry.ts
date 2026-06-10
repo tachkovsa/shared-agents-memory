@@ -144,3 +144,19 @@ export const memoryCount = new Gauge({
   labelNames: ['namespace'] as const,
   registers: [register],
 });
+
+// ── Staleness audit (ADR-0006 §3.6) ──────────────────────────────────────────
+
+/**
+ * Total staleness audit check outcomes.
+ * result ∈ fresh | stale | broken_ref | skipped
+ *
+ * 'skipped' covers: disabled namespace, no filesystem_audit_root, unreachable
+ * resource, path-traversal rejection, or leave-unchanged result from a checker.
+ */
+export const stalenessAuditTotal = new Counter({
+  name: 'mem_staleness_audit_total',
+  help: 'Total staleness audit check outcomes by result',
+  labelNames: ['result'] as const,
+  registers: [register],
+});
