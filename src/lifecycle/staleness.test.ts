@@ -541,4 +541,25 @@ describe('defaultStalenessCheckers.file — path traversal guard', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it('refuses to follow a symlink that escapes the root', async () => {
+    const { defaultStalenessCheckers: real } = await import('./staleness.js');
+    const { symlink } = await import('node:fs/promises');
+
+    const root = await mkdtemp(join(tmpdir(), 'sam-symlink-root-'));
+    const outside = await mkdtemp(join(tmpdir(), 'sam-symlink-outside-'));
+    try {
+      // A secret outside the audit root, and a symlink inside the root pointing
+      // at it. A lexical check passes (the link path is inside root); only
+      // realpath resolution catches the escape.
+      await writeFile(join(outside, 'secret.txt'), 'top secret');
+      await symlink(join(outside, 'secret.txt'), join(root, 'link.txt'));
+
+      const result = await real.file('link.txt', root, undefined);
+      expect(result).toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
 });

@@ -9,8 +9,8 @@
  * The audit WARNS; it never gates or deletes.
  */
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { readFile, realpath } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { QdrantClient } from '@qdrant/js-client-rest';
@@ -23,6 +23,21 @@ import { stalenessAuditTotal } from '../metrics/registry.js';
 const execFileAsync = promisify(execFile);
 
 const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 h
+const URL_HEAD_TIMEOUT_MS = 5000;
+
+function isEnoent(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code: unknown }).code === 'ENOENT'
+  );
+}
+
+/** True when `target` is the root itself or lives beneath it. */
+function isInside(target: string, root: string): boolean {
+  return target === root || target.startsWith(root + sep);
+}
 
 // ── Checker interface ─────────────────────────────────────────────────────────
 
@@ -48,26 +63,42 @@ export interface StalenessCheckers {
 
 export const defaultStalenessCheckers: StalenessCheckers = {
   async file(ref, root, lastKnownValue) {
-    // Guard against path traversal: resolved path must stay inside root.
-    const resolvedRoot = resolve(root);
-    const resolvedPath = resolve(root, ref);
-    if (!resolvedPath.startsWith(resolvedRoot + '/') && resolvedPath !== resolvedRoot) {
-      // Path traversal detected — treat as a skip (leave signal unchanged).
+    // Resolve the root through symlinks first so containment is checked against
+    // the real directory.
+    let realRoot: string;
+    try {
+      realRoot = await realpath(root);
+    } catch {
+      // Root missing/unreadable — cannot audit safely; leave signal unchanged.
+      return null;
+    }
+
+    // Lexical pre-check (cheap reject of obvious `../` escapes).
+    const candidate = resolve(realRoot, ref);
+    if (!isInside(candidate, realRoot)) {
+      return null;
+    }
+
+    // Resolve the target through symlinks and re-check containment — defeats a
+    // symlink INSIDE the root that points outside it (lexical checks miss this).
+    let realTarget: string;
+    try {
+      realTarget = await realpath(candidate);
+    } catch (err: unknown) {
+      if (isEnoent(err)) return 'broken_ref';
+      // Other IO error — leave signal unchanged.
+      return null;
+    }
+    if (!isInside(realTarget, realRoot)) {
+      // Symlink escaped the root — refuse to read.
       return null;
     }
 
     let contents: Buffer;
     try {
-      contents = await readFile(resolvedPath);
+      contents = await readFile(realTarget);
     } catch (err: unknown) {
-      if (
-        typeof err === 'object' &&
-        err !== null &&
-        'code' in err &&
-        (err as { code: unknown }).code === 'ENOENT'
-      ) {
-        return 'broken_ref';
-      }
+      if (isEnoent(err)) return 'broken_ref';
       // Other IO error — leave signal unchanged.
       return null;
     }
@@ -83,7 +114,10 @@ export const defaultStalenessCheckers: StalenessCheckers = {
 
   async url(ref) {
     try {
-      const res = await fetch(ref, { method: 'HEAD' });
+      const res = await fetch(ref, {
+        method: 'HEAD',
+        signal: AbortSignal.timeout(URL_HEAD_TIMEOUT_MS),
+      });
       if (res.status === 200) return 'fresh';
       if (res.status === 404) return 'broken_ref';
       // Anything else (5xx, rate-limit, etc.) — leave unchanged.
@@ -157,6 +191,15 @@ export class StalenessAuditor {
   private readonly intervalMs: number;
   private readonly checkers: StalenessCheckers;
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** Re-entrancy guard: a slow sweep must not be restarted by the next tick. */
+  private sweeping = false;
+  /**
+   * Per-namespace scroll cursor. Each nightly run resumes from where the last
+   * left off and wraps to the start when exhausted, so namespaces with more than
+   * `staleness_audit_batch_size` eligible points are swept over several runs
+   * instead of re-auditing the same first page forever.
+   */
+  private readonly cursors = new Map<string, string | number | Record<string, unknown> | null | undefined>();
 
   constructor(deps: StalenessAuditorDeps) {
     this.qdrant = deps.qdrant;
@@ -189,6 +232,16 @@ export class StalenessAuditor {
    * Called by the timer AND directly from tests.
    */
   async runOnce(): Promise<StalenessStats> {
+    if (this.sweeping) return emptyStalenessStats();
+    this.sweeping = true;
+    try {
+      return await this.sweep();
+    } finally {
+      this.sweeping = false;
+    }
+  }
+
+  private async sweep(): Promise<StalenessStats> {
     const stats = emptyStalenessStats();
     const nowIso = this.now().toISOString();
 
@@ -233,10 +286,14 @@ export class StalenessAuditor {
             ],
           },
           limit: batchSize,
+          offset: this.cursors.get(nsId) ?? undefined,
           with_payload: true,
           with_vector: false,
         });
         points = result.points;
+        // Resume from the next page next run; wrap to the start (undefined) when
+        // this was the last page, so every eligible point is eventually swept.
+        this.cursors.set(nsId, result.next_page_offset ?? undefined);
       } catch {
         continue;
       }
