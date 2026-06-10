@@ -40,7 +40,9 @@ export function registerMemoryAdminRoutes(
       const { memories, nextCursor } = await memoryService.list({
         namespace: req.params.id,
         limit,
-        cursor: req.query.cursor,
+        // Coerce to string: Fastify's query parser can yield arrays/objects
+        // (?cursor=a&cursor=b, ?cursor[x]=y) which must not reach Qdrant raw.
+        cursor: typeof req.query.cursor === 'string' ? req.query.cursor : undefined,
         includeDeleted: req.query.include_deleted === 'true',
       });
       return { memories: memories.map(view), next_cursor: nextCursor };
