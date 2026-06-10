@@ -50,6 +50,9 @@ async function main(): Promise<void> {
       bindPort: Number(process.env['ADMIN_BIND_PORT'] ?? '8081'),
       cookieSecure: process.env['ADMIN_COOKIE_SECURE'] !== 'false',
       trustProxy: process.env['ADMIN_TRUST_PROXY'] === 'true',
+      // Share the engine's PatStore instance so operator-minted PATs and
+      // agent-side lookups stay consistent in-process.
+      patStore,
     });
     process.stderr.write(`[admin] console listening on ${admin.url}\n`);
   }

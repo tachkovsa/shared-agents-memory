@@ -6,8 +6,10 @@ import type { AuthProvider, Principal } from '../auth/auth-provider.js';
 import type { SessionService } from '../auth/session-service.js';
 import type { SetupTokenVerifier } from '../auth/setup-token.js';
 import type { OperatorRepository } from '../stores/types.js';
+import type { PatStore } from '../../auth/pat-store.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerNamespaceAdminRoutes } from './routes/namespaces.js';
+import { registerPatAdminRoutes } from './routes/pats.js';
 
 export const SESSION_COOKIE = 'sam_admin_session';
 export const CSRF_HEADER = 'x-csrf-token';
@@ -35,6 +37,8 @@ export interface AdminAppOptions {
   setupTokens?: SetupTokenVerifier;
   /** Engine data dir — enables the read-only namespace/PAT operator views. Omit in unit tests that don't need them. */
   dataDir?: string;
+  /** Shared PatStore (already opened with the server pepper) — enables PAT management routes. */
+  patStore?: PatStore;
 }
 
 /**
@@ -61,6 +65,10 @@ export async function createAdminApp(opts: AdminAppOptions): Promise<FastifyInst
 
   if (opts.dataDir) {
     registerNamespaceAdminRoutes(app, { dataDir: opts.dataDir, requireAuth });
+  }
+
+  if (opts.patStore) {
+    registerPatAdminRoutes(app, { patStore: opts.patStore, requireAuth });
   }
 
   if (opts.staticDir) {

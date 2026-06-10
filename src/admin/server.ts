@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import type { PatStore } from '../auth/pat-store.js';
 import { createAdminApp } from './api/app.js';
 import { Argon2idPasswordHasher } from './auth/password.js';
 import { SessionService } from './auth/session-service.js';
@@ -16,6 +17,8 @@ export interface AdminServerOptions {
   trustProxy?: boolean;
   /** Override the built-SPA directory; defaults to dist/admin-public next to this file. */
   staticDir?: string;
+  /** Shared PatStore (opened with the server pepper) — enables PAT management routes. */
+  patStore?: PatStore;
 }
 
 export interface AdminServer {
@@ -46,6 +49,7 @@ export async function startAdminServer(opts: AdminServerOptions): Promise<AdminS
     staticDir: resolveStaticDir(opts.staticDir),
     setupTokens,
     dataDir: opts.dataDir,
+    patStore: opts.patStore,
   });
   app.addHook('onClose', () => {
     db.close();
