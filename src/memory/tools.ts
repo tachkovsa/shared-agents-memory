@@ -146,7 +146,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
             ? await countNamespaceMemories(ctx.namespaceId)
             : undefined;
           try {
-            await quota.check(ctx.namespaceId, 'write', {
+            await quota.reserve(ctx.namespaceId, 'write', {
               quota: nsQuota,
               estimatedTokens,
               currentCount,
@@ -165,7 +165,8 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
       }
 
       try {
-        const estimatedTokens = Math.ceil(input.content.length / 4);
+        // Quota already consumed atomically by reserve() above (no separate
+        // post-op record — that split was the check→record TOCTOU).
         const { record, outcome, matchedExistingId } = await service.store({
           namespace: ctx.namespaceId,
           agentId: ctx.agentId,
@@ -176,11 +177,6 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
           source: input.source,
           id: input.id,
         });
-
-        // Record usage after successful store.
-        if (quota) {
-          await quota.record(ctx.namespaceId, 'write', { estimatedTokens });
-        }
 
         return jsonResponse({
           id: record.id,
@@ -225,7 +221,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
         if (nsQuota) {
           const estimatedTokens = Math.ceil(input.query.length / 4);
           try {
-            await quota.check(ctx.namespaceId, 'search', {
+            await quota.reserve(ctx.namespaceId, 'search', {
               quota: nsQuota,
               estimatedTokens,
             });
@@ -242,18 +238,13 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
         }
       }
 
-      const estimatedTokens = Math.ceil(input.query.length / 4);
       const results = await service.search({
         namespace: ctx.namespaceId,
         query: input.query,
         limit: input.limit ?? 10,
         tags: input.tags,
       });
-
-      // Record usage after successful search.
-      if (quota) {
-        await quota.record(ctx.namespaceId, 'search', { estimatedTokens });
-      }
+      // Quota already consumed by reserve() above.
 
       for (const result of results) {
         reinforcement?.record(result.memory.id);

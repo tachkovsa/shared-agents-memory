@@ -222,4 +222,54 @@ describe('QuotaService — graceful missing quota file', () => {
       svc.check('legacy-ns', 'write', { quota }),
     ).resolves.toBeUndefined();
   });
+
+  it('treats a corrupt _quota.json as a reset instead of throwing', async () => {
+    const { writeFile } = await import('node:fs/promises');
+    const { join: joinPath } = await import('node:path');
+    await writeFile(
+      joinPath(dataDir, 'namespaces', 'test-ns', '_quota.json'),
+      '{ this is not valid json',
+    );
+    const svc = new QuotaService({ dataDir });
+    await expect(
+      svc.check('test-ns', 'write', { quota: makeQuota() }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe('QuotaService.reserve — atomic check-and-consume', () => {
+  it('never lets concurrent reserves exceed the cap (closes check→record TOCTOU)', async () => {
+    const svc = new QuotaService({ dataDir });
+    const quota = makeQuota({ daily_writes: 5, daily_embedding_tokens: 1_000_000 });
+
+    // Fire 20 concurrent reserves against a cap of 5.
+    const results = await Promise.allSettled(
+      Array.from({ length: 20 }, () => svc.reserve('test-ns', 'write', { quota })),
+    );
+    const granted = results.filter((r) => r.status === 'fulfilled').length;
+    const rejected = results.filter(
+      (r) => r.status === 'rejected' && r.reason instanceof QuotaExceededError,
+    ).length;
+
+    expect(granted).toBe(5);
+    expect(rejected).toBe(15);
+
+    // A 6th sequential reserve still rejects — usage was persisted, not lost.
+    await expect(svc.reserve('test-ns', 'write', { quota })).rejects.toBeInstanceOf(
+      QuotaExceededError,
+    );
+  });
+
+  it('does not consume quota when the op is over cap', async () => {
+    const svc = new QuotaService({ dataDir });
+    const quota = makeQuota({ daily_writes: 1, daily_embedding_tokens: 1_000_000 });
+    await svc.reserve('test-ns', 'write', { quota });
+    await expect(svc.reserve('test-ns', 'write', { quota })).rejects.toBeInstanceOf(
+      QuotaExceededError,
+    );
+    // The rejected reserve must not have bumped the counter past 1.
+    await expect(svc.check('test-ns', 'write', { quota })).rejects.toBeInstanceOf(
+      QuotaExceededError,
+    );
+  });
 });

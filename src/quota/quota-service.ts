@@ -6,7 +6,7 @@
  * per-namespace via a Promise-chain mutex so concurrent tool calls don't lose
  * counter increments.
  */
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { NamespaceQuota } from '../namespaces/types.js';
 import { namespaceDir } from '../namespaces/store.js';
@@ -46,10 +46,62 @@ interface QuotaFile {
   last_reset: string; // ISO-8601
 }
 
+export interface QuotaCheckOpts {
+  quota: NamespaceQuota;
+  estimatedTokens?: number;
+  currentCount?: number;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function quotaFilePath(dataDir: string, namespace: string): string {
   return join(namespaceDir(dataDir, namespace), '_quota.json');
+}
+
+/**
+ * Throw `QuotaExceededError` if performing one `kind` op would breach a limit.
+ * Pure — operates on the already-loaded usage so `check` and `reserve` share it.
+ */
+function assertWithinQuota(
+  namespace: string,
+  kind: 'write' | 'search',
+  usage: QuotaUsage,
+  opts: QuotaCheckOpts,
+): void {
+  if (kind === 'write') {
+    if (usage.writes >= opts.quota.daily_writes) {
+      throw new QuotaExceededError(namespace, 'daily_writes', usage.writes, opts.quota.daily_writes);
+    }
+    if (opts.currentCount !== undefined && opts.currentCount >= opts.quota.max_memories) {
+      throw new QuotaExceededError(
+        namespace,
+        'max_memories',
+        opts.currentCount,
+        opts.quota.max_memories,
+      );
+    }
+  } else {
+    if (usage.searches >= opts.quota.daily_searches) {
+      throw new QuotaExceededError(
+        namespace,
+        'daily_searches',
+        usage.searches,
+        opts.quota.daily_searches,
+      );
+    }
+  }
+  // daily_embedding_tokens applies to both writes and searches (both embed).
+  if (opts.estimatedTokens !== undefined) {
+    const projected = usage.embedding_tokens + opts.estimatedTokens;
+    if (projected > opts.quota.daily_embedding_tokens) {
+      throw new QuotaExceededError(
+        namespace,
+        'daily_embedding_tokens',
+        usage.embedding_tokens,
+        opts.quota.daily_embedding_tokens,
+      );
+    }
+  }
 }
 
 /** Return the UTC date string (YYYY-MM-DD) for a Date instance. */
@@ -92,76 +144,12 @@ export class QuotaService {
   async check(
     namespace: string,
     kind: 'write' | 'search',
-    opts?: {
-      quota: NamespaceQuota;
-      estimatedTokens?: number;
-      currentCount?: number;
-    },
+    opts?: QuotaCheckOpts,
   ): Promise<void> {
     if (!opts) return; // nothing to check without quota config
-
     await this.withLock(namespace, async () => {
-      const file = await this.load(namespace);
-      const usage = this.resolveUsage(file);
-
-      if (kind === 'write') {
-        // daily_writes
-        if (usage.writes >= opts.quota.daily_writes) {
-          throw new QuotaExceededError(
-            namespace,
-            'daily_writes',
-            usage.writes,
-            opts.quota.daily_writes,
-          );
-        }
-        // max_memories
-        if (
-          opts.currentCount !== undefined &&
-          opts.currentCount >= opts.quota.max_memories
-        ) {
-          throw new QuotaExceededError(
-            namespace,
-            'max_memories',
-            opts.currentCount,
-            opts.quota.max_memories,
-          );
-        }
-        // daily_embedding_tokens
-        if (opts.estimatedTokens !== undefined) {
-          const projectedTokens = usage.embedding_tokens + opts.estimatedTokens;
-          if (projectedTokens > opts.quota.daily_embedding_tokens) {
-            throw new QuotaExceededError(
-              namespace,
-              'daily_embedding_tokens',
-              usage.embedding_tokens,
-              opts.quota.daily_embedding_tokens,
-            );
-          }
-        }
-      } else {
-        // search
-        // daily_searches
-        if (usage.searches >= opts.quota.daily_searches) {
-          throw new QuotaExceededError(
-            namespace,
-            'daily_searches',
-            usage.searches,
-            opts.quota.daily_searches,
-          );
-        }
-        // daily_embedding_tokens
-        if (opts.estimatedTokens !== undefined) {
-          const projectedTokens = usage.embedding_tokens + opts.estimatedTokens;
-          if (projectedTokens > opts.quota.daily_embedding_tokens) {
-            throw new QuotaExceededError(
-              namespace,
-              'daily_embedding_tokens',
-              usage.embedding_tokens,
-              opts.quota.daily_embedding_tokens,
-            );
-          }
-        }
-      }
+      const usage = this.resolveUsage(await this.load(namespace));
+      assertWithinQuota(namespace, kind, usage, opts);
     });
   }
 
@@ -177,18 +165,45 @@ export class QuotaService {
     await this.withLock(namespace, async () => {
       const file = await this.load(namespace);
       const usage = this.resolveUsage(file);
-
-      if (kind === 'write') {
-        usage.writes += 1;
-      } else {
-        usage.searches += 1;
-      }
-      if (opts?.estimatedTokens) {
-        usage.embedding_tokens += opts.estimatedTokens;
-      }
-
+      this.applyIncrement(usage, kind, opts?.estimatedTokens);
       await this.save(namespace, { usage, last_reset: file.last_reset });
     });
+  }
+
+  /**
+   * Atomically check-and-consume quota for one operation under a single lock
+   * acquisition (ADR-0006 abuse protection). This closes the check→record
+   * TOCTOU: concurrent callers cannot all pass `check` on stale usage and then
+   * each `record` past the cap. Callers invoke `reserve` BEFORE the operation;
+   * on `QuotaExceededError` nothing is consumed and the operation must not run.
+   *
+   * Note (max_memories): the count is checked against the live point count, so
+   * at the cap a dedup-reinforce/merge (which would NOT grow the count) is also
+   * blocked. Acceptable for abuse protection — fail-closed at the ceiling.
+   */
+  async reserve(
+    namespace: string,
+    kind: 'write' | 'search',
+    opts?: QuotaCheckOpts,
+  ): Promise<void> {
+    if (!opts) return;
+    await this.withLock(namespace, async () => {
+      const file = await this.load(namespace);
+      const usage = this.resolveUsage(file);
+      assertWithinQuota(namespace, kind, usage, opts);
+      this.applyIncrement(usage, kind, opts.estimatedTokens);
+      await this.save(namespace, { usage, last_reset: file.last_reset });
+    });
+  }
+
+  private applyIncrement(
+    usage: QuotaUsage,
+    kind: 'write' | 'search',
+    estimatedTokens?: number,
+  ): void {
+    if (kind === 'write') usage.writes += 1;
+    else usage.searches += 1;
+    if (estimatedTokens) usage.embedding_tokens += estimatedTokens;
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────────
@@ -221,7 +236,17 @@ export class QuotaService {
       }
       throw err;
     }
-    const parsed = JSON.parse(raw) as QuotaFile;
+    let parsed: QuotaFile;
+    try {
+      parsed = JSON.parse(raw) as QuotaFile;
+    } catch {
+      // Corrupt quota file (partial write / manual edit). Reset rather than
+      // throwing on every enforced store/search for this namespace.
+      return { usage: {}, last_reset: this.now().toISOString() };
+    }
+    if (!parsed || typeof parsed.last_reset !== 'string' || typeof parsed.usage !== 'object') {
+      return { usage: {}, last_reset: this.now().toISOString() };
+    }
     // Roll over if the last reset was on a different UTC day.
     const todayStr = utcDateString(this.now());
     const resetStr = utcDateString(new Date(parsed.last_reset));
@@ -233,7 +258,11 @@ export class QuotaService {
 
   private async save(namespace: string, file: { usage: QuotaUsage; last_reset: string }): Promise<void> {
     const path = quotaFilePath(this.dataDir, namespace);
-    await writeFile(path, `${JSON.stringify(file, null, 2)}\n`);
+    // Atomic write: a crash mid-write must not leave a truncated _quota.json.
+    // Writes are serialised per-namespace by withLock, so a fixed tmp name is safe.
+    const tmp = `${path}.tmp`;
+    await writeFile(tmp, `${JSON.stringify(file, null, 2)}\n`);
+    await rename(tmp, path);
   }
 
   /** Normalise a potentially partial `usage` object to full counters. */
