@@ -1,24 +1,15 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loginSchema } from '@shared/schemas';
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { LogoLockup, LogoMark } from '@/components/Logo';
 import { useLogin } from '@/hooks/use-auth';
 import { ApiError } from '@/lib/api';
 
 const MESSAGES: Record<string, string> = {
-  invalid_credentials: 'Wrong username or password.',
-  totp_invalid: 'That authentication code did not match.',
-  disabled: 'This account is disabled.',
-  invalid_input: 'Check the fields and try again.',
+  invalid_credentials: 'Неверный логин или пароль.',
+  totp_invalid: 'Код аутентификации не подошёл.',
+  disabled: 'Учётная запись отключена.',
+  invalid_input: 'Проверьте поля и попробуйте снова.',
 };
 
 export function LoginPage() {
@@ -33,13 +24,9 @@ export function LoginPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    const parsed = loginSchema.safeParse({
-      username,
-      password,
-      totp: totp || undefined,
-    });
+    const parsed = loginSchema.safeParse({ username, password, totp: totp || undefined });
     if (!parsed.success) {
-      setError('Username must be 3+ chars and password 8+.');
+      setError('Логин — от 3 символов, пароль — от 8.');
       return;
     }
     try {
@@ -48,35 +35,39 @@ export function LoginPage() {
     } catch (err) {
       if (err instanceof ApiError && err.code === 'totp_required') {
         setTotpRequired(true);
-        setError('Enter your authenticator code.');
+        setError('Введите код из приложения-аутентификатора.');
         return;
       }
-      setError(err instanceof ApiError ? (MESSAGES[err.code] ?? err.code) : 'Login failed.');
+      setError(err instanceof ApiError ? (MESSAGES[err.code] ?? err.code) : 'Не удалось войти.');
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>Sign in to SAM</CardTitle>
-          <CardDescription>Operator console</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="username">Username</Label>
-              <Input
+    <div className="login">
+      <div className="login-form-side">
+        <div className="login-form">
+          <div className="row" style={{ gap: 10, marginBottom: 28 }}>
+            <LogoLockup />
+          </div>
+          <h1 style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em' }}>Вход в консоль</h1>
+          <p className="muted" style={{ marginTop: 6, marginBottom: 24 }}>Управление общей памятью ваших агентов.</p>
+
+          <form onSubmit={onSubmit}>
+            <div className="field">
+              <label htmlFor="username">Логин</label>
+              <input
                 id="username"
+                className="input"
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
+            <div className="field">
+              <label htmlFor="password">Пароль</label>
+              <input
                 id="password"
+                className="input"
                 type="password"
                 autoComplete="current-password"
                 value={password}
@@ -84,10 +75,11 @@ export function LoginPage() {
               />
             </div>
             {totpRequired && (
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="totp">Authenticator code</Label>
-                <Input
+              <div className="field">
+                <label htmlFor="totp">Код аутентификации</label>
+                <input
                   id="totp"
+                  className="input mono"
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   value={totp}
@@ -95,13 +87,33 @@ export function LoginPage() {
                 />
               </div>
             )}
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" disabled={login.isPending}>
-              {login.isPending ? 'Signing in…' : 'Sign in'}
-            </Button>
+            {error && <p style={{ color: 'var(--danger-fg)', fontSize: 13, marginBottom: 14 }}>{error}</p>}
+            <button className="btn btn-primary btn-lg btn-block" type="submit" disabled={login.isPending}>
+              {login.isPending ? 'Входим…' : 'Войти'}
+            </button>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
+      <div className="login-art">
+        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
+          <LogoMark palette="onDark" width={120} />
+          <div
+            style={{
+              fontFamily: 'var(--font-head)',
+              color: '#EDEFF2',
+              fontSize: 22,
+              fontWeight: 700,
+              marginTop: 24,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            Единая память для ваших ИИ-агентов
+          </div>
+          <p style={{ color: '#9AA2AE', marginTop: 10, maxWidth: 320 }}>
+            Контекст, который не теряется между сессиями. В вашем контуре.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
