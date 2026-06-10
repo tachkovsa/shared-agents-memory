@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PatStore } from '../../../auth/pat-store.js';
+import { createNamespaceSkeleton, loadMembers } from '../../../namespaces/store.js';
 import { ScryptPasswordHasher } from '../../auth/password.js';
 import { SessionService } from '../../auth/session-service.js';
 import { openDb, type Db } from '../../stores/db.js';
@@ -30,7 +31,7 @@ beforeEach(async () => {
     sessions: new SqliteSessionStore(db),
     hasher: new ScryptPasswordHasher({ N: 16384, r: 8, p: 1 }),
   });
-  app = await createAdminApp({ sessions, operators, cookieSecure: false, patStore });
+  app = await createAdminApp({ sessions, operators, cookieSecure: false, patStore, dataDir });
   await app.ready();
 });
 
@@ -143,6 +144,37 @@ describe('admin BFF — PAT management', () => {
       payload: NEW_PAT,
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  it('prunes orphaned memberships when an agent\'s last PAT is revoked', async () => {
+    // A namespace owned by (and therefore a member for) agent identity 'solo'.
+    await createNamespaceSkeleton(dataDir, {
+      id: 'team-solo',
+      display_name: 'Solo',
+      owner_agent_id: 'solo',
+      owner_scopes: ['memory:read', 'memory:write'],
+    });
+    expect((await loadMembers(dataDir, 'team-solo'))?.some((m) => m.agent_id === 'solo')).toBe(true);
+
+    const { sessionId, csrf } = await setup();
+    const created = (
+      await app.inject({
+        method: 'POST',
+        url: '/api/admin/pats',
+        headers: { cookie: `${SESSION_COOKIE}=${sessionId}`, [CSRF_HEADER]: csrf },
+        payload: { ...NEW_PAT, agent_identity: 'solo' },
+      })
+    ).json();
+
+    await app.inject({
+      method: 'POST',
+      url: `/api/admin/pats/${created.pat.id}/revoke`,
+      headers: { cookie: `${SESSION_COOKIE}=${sessionId}`, [CSRF_HEADER]: csrf },
+      payload: {},
+    });
+
+    // 'solo' had no other active PAT → its membership is pruned.
+    expect((await loadMembers(dataDir, 'team-solo'))?.some((m) => m.agent_id === 'solo')).toBe(false);
   });
 
   it('400s an invalid scope', async () => {

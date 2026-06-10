@@ -8,6 +8,13 @@ import type { PreHandler } from '../app.js';
 export interface PatAdminRoutesDeps {
   patStore: PatStore;
   requireAuth: PreHandler;
+  /**
+   * Called after a successful revoke with the PAT's agent_identity, mirroring the
+   * MCP `pat_revoke` path: when the agent's last token is revoked, prune its now
+   * orphaned namespace memberships (otherwise a later PAT for the same identity
+   * would silently regain access). Omit to skip (e.g. unit tests without a dataDir).
+   */
+  onRevoke?: (agentIdentity: string) => Promise<void>;
 }
 
 /**
@@ -20,7 +27,7 @@ export interface PatAdminRoutesDeps {
  * in the create response — it cannot be retrieved again (it isn't stored).
  */
 export function registerPatAdminRoutes(app: FastifyInstance, deps: PatAdminRoutesDeps): void {
-  const { patStore, requireAuth } = deps;
+  const { patStore, requireAuth, onRevoke } = deps;
 
   app.get('/api/admin/pats', { preHandler: requireAuth }, async () => {
     return { pats: patStore.list().map(redactPat) };
@@ -66,6 +73,8 @@ export function registerPatAdminRoutes(app: FastifyInstance, deps: PatAdminRoute
         parsed.data.reason ?? `revoked via admin console by operator:${req.principal!.operatorId}`;
       try {
         const updated = await patStore.revoke(req.params.id, reason);
+        // Parity with MCP pat_revoke: prune memberships orphaned by the last token.
+        await onRevoke?.(updated.agent_identity);
         return redactPat(updated);
       } catch (err) {
         if (err instanceof PatNotFoundError) {
