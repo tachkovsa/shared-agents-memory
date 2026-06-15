@@ -7,6 +7,8 @@ and a GitHub Release via `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-06-15
+
 ### Added
 
 - **Single-domain deploy layout for the console** (`/console` subpath). The
