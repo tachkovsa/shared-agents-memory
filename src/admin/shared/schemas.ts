@@ -37,3 +37,65 @@ export const loginSchema = z.object({
 
 export type SetupInput = z.infer<typeof setupSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+
+// ── namespace + memory mutations (operator BFF) ──────────────────────────────
+
+/**
+ * Scopes an operator may grant to a *shared* member. Excludes the privileged
+ * `namespace:admin` and `service:admin` — sharing must never be an escalation
+ * vector that hands an agent token instance- or namespace-admin rights.
+ */
+export const SHAREABLE_SCOPES = [
+  'memory:read',
+  'memory:write',
+  'memory:delete',
+  'rules:read',
+  'rules:write',
+] as const satisfies readonly AgentScope[];
+
+const shareableScopesSchema = z
+  .array(z.enum(SHAREABLE_SCOPES as unknown as readonly [AgentScope, ...AgentScope[]]))
+  .min(1);
+
+/** kebab-case, 3–64 chars — mirrors NAMESPACE_ID_REGEX in namespaces/store.ts. */
+export const namespaceIdSchema = z
+  .string()
+  .regex(/^[a-z][a-z0-9-]{1,62}[a-z0-9]$/, 'namespace id must be kebab-case (3–64 chars)');
+
+export const createNamespaceSchema = z.object({
+  id: namespaceIdSchema,
+  display_name: z.string().trim().min(1).max(128),
+  owner_agent_id: z.string().trim().min(1).max(128),
+});
+
+export const shareNamespaceSchema = z.object({
+  agent_id: z.string().trim().min(1).max(128),
+  scopes: shareableScopesSchema,
+});
+
+export const writeMemorySchema = z.object({
+  content: z.string().trim().min(1).max(20_000),
+  agent_id: z.string().trim().min(1).max(128),
+  tags: z.array(z.string().trim().min(1).max(64)).max(32).optional(),
+  summary: z.string().trim().max(2_000).optional(),
+  source: z.string().trim().max(512).optional(),
+});
+
+export const searchMemoryQuerySchema = z.object({
+  q: z.string().trim().min(1).max(1_000),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+});
+
+export const createRuleSchema = z.object({
+  rule_id: z.string().trim().min(1).max(64),
+  title: z.string().trim().min(1).max(200),
+  body: z.string().trim().min(1).max(20_000),
+  severity: z.enum(['hard', 'soft']).optional(),
+  tags: z.array(z.string().trim().min(1).max(64)).max(16).optional(),
+  applies_to: z.array(z.string().trim().min(1).max(128)).max(32).optional(),
+});
+
+export type CreateNamespaceInput = z.infer<typeof createNamespaceSchema>;
+export type ShareNamespaceInput = z.infer<typeof shareNamespaceSchema>;
+export type WriteMemoryInput = z.infer<typeof writeMemorySchema>;
+export type CreateRuleInput = z.infer<typeof createRuleSchema>;

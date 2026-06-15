@@ -24,6 +24,7 @@ import {
   saveMembers,
   saveNamespace,
   softDeleteNamespace,
+  withMembersLock,
 } from './store.js';
 import type { NamespaceQuota, RetentionPolicy } from './types.js';
 import { BOOTSTRAP_NAMESPACE_ID } from './types.js';
@@ -540,24 +541,27 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
       const ns = await loadNamespace(dataDir, input.id);
       if (!ns) return notFoundResponse(input.id);
 
-      const members = (await loadMembers(dataDir, input.id)) ?? [];
-      const existing = members.findIndex((m) => m.agent_id === input.agent_id);
-
-      const entry = {
-        agent_id: input.agent_id,
-        scopes: [...input.scopes] as AgentScope[],
-        added_by: sessionPat.agent_identity,
-        added_at: now().toISOString(),
-      };
-
-      if (existing >= 0) {
-        // Update existing member's scopes.
-        members[existing] = entry;
-      } else {
-        members.push(entry);
-      }
-
-      await saveMembers(dataDir, input.id, members);
+      // Serialize with the admin BFF / prune writers on the same lock. Built
+      // inside the lock so an update preserves the original added_by/added_at
+      // (only scopes change), matching upsertMember in store.ts — provenance of
+      // a membership must not be rewritten every time its scopes are edited.
+      const entry = await withMembersLock(input.id, async () => {
+        const members = (await loadMembers(dataDir, input.id)) ?? [];
+        const existing = members.findIndex((m) => m.agent_id === input.agent_id);
+        const member = {
+          agent_id: input.agent_id,
+          scopes: [...input.scopes] as AgentScope[],
+          added_by: existing >= 0 ? members[existing].added_by : sessionPat.agent_identity,
+          added_at: existing >= 0 ? members[existing].added_at : now().toISOString(),
+        };
+        if (existing >= 0) {
+          members[existing] = member; // update existing member's scopes
+        } else {
+          members.push(member);
+        }
+        await saveMembers(dataDir, input.id, members);
+        return member;
+      });
       await recordAuthSuccess('namespace_add_member', 'namespace:admin');
 
       return jsonResponse({
@@ -587,18 +591,22 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
       const ns = await loadNamespace(dataDir, input.id);
       if (!ns) return notFoundResponse(input.id);
 
-      const members = (await loadMembers(dataDir, input.id)) ?? [];
-      const before = members.length;
-      const filtered = members.filter((m) => m.agent_id !== input.agent_id);
+      const didRemove = await withMembersLock(input.id, async () => {
+        const members = (await loadMembers(dataDir, input.id)) ?? [];
+        const before = members.length;
+        const filtered = members.filter((m) => m.agent_id !== input.agent_id);
+        if (filtered.length === before) return false;
+        await saveMembers(dataDir, input.id, filtered);
+        return true;
+      });
 
-      if (filtered.length === before) {
+      if (!didRemove) {
         return jsonResponse(
           { error: 'not_found', namespace_id: input.id, agent_id: input.agent_id },
           true,
         );
       }
 
-      await saveMembers(dataDir, input.id, filtered);
       await recordAuthSuccess('namespace_remove_member', 'namespace:admin');
 
       return jsonResponse({
