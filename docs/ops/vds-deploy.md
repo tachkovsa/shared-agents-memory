@@ -346,6 +346,74 @@ gh workflow run deploy.yml --field dry_run=true
 
 ---
 
+## 11. Self-hosted embeddings (bge-m3 via TEI) — ADR-0010
+
+The default cloud profile embeds via OpenRouter (qwen3, 4096-dim). The
+**self-host profile** runs a local [text-embeddings-inference](https://github.com/huggingface/text-embeddings-inference)
+(TEI) sidecar serving `BAAI/bge-m3` (1024-dim) — no external embedding
+dependency, data stays on the box. It is an opt-in compose overlay.
+
+### Bring-up
+
+```bash
+# 1. Create the model-cache dir (first boot downloads bge-m3, ~2GB):
+install -d -o sam -g sam /var/lib/shared-agents-memory/tei
+
+# 2. Set the self-host embeddings profile in /etc/shared-agents-memory/.env
+#    (so CD restarts of mcp keep the right provider — see note below):
+#      EMBEDDINGS_API_KEY=local
+#      EMBEDDINGS_BASE_URL=http://embedder/v1
+#      EMBEDDINGS_MODEL=bge-m3
+#      EMBEDDINGS_DIMENSION=1024
+
+# 3. Start the stack WITH the embedder overlay (all three files):
+cd /opt/shared-agents-memory
+set -a && source /etc/shared-agents-memory/.env && set +a
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  -f docker-compose.embedder.yml up -d
+
+# 4. Wait for the model to load, then verify the OpenAI-compatible route:
+docker exec sam-mcp node -e "fetch('http://embedder/v1/embeddings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:'bge-m3',input:'ping'})}).then(r=>r.json()).then(d=>console.log('dim=',d.data[0].embedding.length)).catch(e=>console.log('ERR',e.message))"
+# Expect: dim= 1024
+```
+
+> **CD note:** the `deploy.yml` pipeline restarts only the `mcp` container using
+> `docker-compose.yml` + `docker-compose.prod.yml` (it does not know about the
+> embedder overlay). That is fine — the embeddings provider is read from
+> `/etc/shared-agents-memory/.env` (step 2), which the base compose passes
+> through, and the `embedder` container keeps running (`restart: always`)
+> independently. Always set the embeddings env in `.env`, not only in the
+> overlay, on a self-host box.
+
+### Migrating data from a cloud (4096-dim) box
+
+Vectors are model-specific and cannot be copied across dimensions/models. To
+move memories from an OpenRouter/qwen3 box onto a bge-m3 box, **re-embed from the
+original text**:
+
+```bash
+# On the new box, restore the old Qdrant snapshot into a SEPARATE collection
+# (see qdrant-backup.md), e.g. `agent_memories_src`. Then:
+cd /opt/shared-agents-memory
+set -a && source /etc/shared-agents-memory/.env && set +a
+
+# Dry-run first (embeds, reports counts, writes nothing):
+npx tsx scripts/reembed-collection.ts \
+  --source-collection agent_memories_src --dry-run --verbose
+
+# Real run (creates agent_memories at 1024-dim if absent, re-embeds, upserts):
+npx tsx scripts/reembed-collection.ts \
+  --source-collection agent_memories_src --verbose
+
+# Verify, then drop the temp source collection.
+```
+
+The filesystem `data/` tree (namespaces, rules, members, quotas, PAT store,
+`_auth/.pepper`, audit) is provider-independent — copy it with `rsync` as-is.
+Keep `SAM_PAT_PEPPER` identical to the source box so existing PATs stay valid.
+
 ## Related documents
 
 - [ADR-0003 §3.4](../adr/0003-transport-stdio-and-http.md) — deployment topology and transport decisions
