@@ -7,6 +7,16 @@ and a GitHub Release via `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Fixed
+
+- **TEI embedder OOM on the 8GB box.** `docker-compose.embedder.yml` now passes
+  `--max-batch-tokens ${TEI_MAX_BATCH_TOKENS:-4096}`. TEI's warmup allocates
+  attention buffers that scale ~seq² with the batch-token cap; the upstream
+  default (16384) OOM-kills the container (~7.7GB RSS) on an 8GB host even
+  alongside just Qdrant + mcp. 4096 warms up stably at ~5GB. Documented the
+  trade-off (single inputs above ~4096 tokens are rejected) in the overlay and
+  `.env.example`.
+
 ## [0.3.1] — 2026-06-15
 
 ### Added

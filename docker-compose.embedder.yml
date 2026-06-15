@@ -20,6 +20,8 @@
 #   TEI_IMAGE_TAG        — TEI image tag (default: cpu-1.9). Bump as releases land.
 #   EMBEDDINGS_MODEL_ID  — HF model id TEI loads (default: BAAI/bge-m3, 1024-dim).
 #   TEI_DATA_DIR         — host path for the TEI model cache (default below).
+#   TEI_MAX_BATCH_TOKENS — warmup/batch token cap (default 4096). See the note on
+#                          the `command:` below — the default 16384 OOMs an 8GB box.
 #   EMBEDDINGS_DIMENSION — MUST match the model (bge-m3 → 1024). Immutable once
 #                          the Qdrant collection exists (ADR-0010 §3.3).
 #
@@ -35,7 +37,15 @@ services:
     restart: always
     # --auto-truncate: memories can exceed bge-m3's 8192-token window
     # (MEMORY_MAX_CONTENT_LENGTH is 32k chars); truncate instead of 413-ing.
-    command: ["--model-id", "${EMBEDDINGS_MODEL_ID:-BAAI/bge-m3}", "--auto-truncate"]
+    #
+    # --max-batch-tokens caps TEI's warmup + per-batch allocation. CRITICAL on
+    # the 8GB reference box: TEI's warmup allocates ~seq²-scaling attention
+    # buffers, and the default 16384 OOM-kills the container (~7.7GB RSS) — even
+    # 8192 doesn't fit alongside Qdrant+mcp+OS. 4096 warms up at ~5GB RSS and is
+    # stable. Trade-off: a single input above ~4096 tokens (~10-14k CIS chars)
+    # is rejected rather than embedded; raise TEI_MAX_BATCH_TOKENS only with
+    # more RAM. Re-embed/migration tooling truncates oversize inputs as a guard.
+    command: ["--model-id", "${EMBEDDINGS_MODEL_ID:-BAAI/bge-m3}", "--auto-truncate", "--max-batch-tokens", "${TEI_MAX_BATCH_TOKENS:-4096}"]
     volumes:
       # Persist the downloaded model so restarts don't re-pull (~2GB).
       - type: bind
