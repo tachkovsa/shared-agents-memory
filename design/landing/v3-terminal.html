@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ArtelMemory — Терминал (V3)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">
+<link rel="stylesheet" href="../brand.css">
+<style>
+  /* ---------- V3 Терминал : developer-first, dark ---------- */
+  body { background:#10151D; color:#D5DAE3; }
+  ::selection { background: rgba(52,146,142,.4); }
+  .v3 { --line:rgba(255,255,255,.08); }
+  .v3-nav { position:sticky; top:0; z-index:50; background:rgba(16,21,29,.85); backdrop-filter:blur(12px); border-bottom:1px solid var(--line); }
+  .v3-nav .am-wrap { display:flex; align-items:center; gap:32px; height:72px; }
+  .v3-nav nav { display:flex; gap:26px; margin-left:8px; }
+  .v3-nav nav a { font-size:14.5px; color:#9AA1AD; font-family:var(--font-mono); }
+  .v3-nav nav a:hover { color:#fff; }
+  .v3-nav .spacer { flex:1; }
+  .v3-nav .gh { color:#9AA1AD; font-size:21px; }
+
+  .v3-hero .am-wrap { display:grid; grid-template-columns:1fr 1.08fr; gap:46px; align-items:center; padding:72px 32px 76px; }
+  .tagline { font-family:var(--font-mono); font-size:13px; color:var(--am-teal-bright); letter-spacing:.04em; display:inline-flex; align-items:center; gap:8px; margin-bottom:22px; }
+  .tagline::before { content:"~/"; color:var(--am-terra-bright); }
+  .v3-hero h1 { font-size:clamp(38px,5vw,60px); font-weight:800; color:#F3F4F1; letter-spacing:-.02em; line-height:1.04; }
+  .v3-hero h1 .t { color:var(--am-teal-bright); }
+  .v3-hero .lede { color:#9DA4B0; font-size:18px; margin-top:20px; max-width:500px; line-height:1.6; }
+  .v3-hero .cta { display:flex; gap:13px; margin-top:30px; flex-wrap:wrap; }
+  .v3-hero .install { margin-top:22px; display:inline-flex; align-items:center; gap:14px; font-family:var(--font-mono); font-size:14px; background:#171E28; border:1px solid var(--line); border-radius:9px; padding:11px 16px; color:#C7CDD7; }
+  .v3-hero .install .cp { color:#6C7382; }
+  .v3-hero .install .pr { color:var(--am-terra-bright); }
+  .v3-hero .install i { color:#6E7682; cursor:pointer; margin-left:4px; }
+
+  /* terminal window */
+  .term { background:#0C1118; border:1px solid var(--line); border-radius:13px; box-shadow:0 30px 70px rgba(0,0,0,.5); overflow:hidden; font-family:var(--font-mono); font-size:13.5px; line-height:1.85; }
+  .term .tbar { display:flex; align-items:center; gap:8px; padding:11px 15px; background:#11171F; border-bottom:1px solid var(--line); }
+  .term .tbar .d { width:11px;height:11px;border-radius:50%; }
+  .term .tbar .ttl { margin-left:10px; color:#6E7682; font-size:12px; }
+  .term .body { padding:18px 20px; white-space:pre-wrap; line-height:1.7; }
+  .term .body .c { color:#5F6675; }
+  .cmt { color:#5E6675; }
+  .term .ln { }
+  .pmt { color:var(--am-teal-bright); }
+  .arg { color:#E4C07A; }
+  .flg { color:var(--am-terra-bright); }
+  .out { color:#8B93A0; }
+  .ok2 { color:#5FB985; }
+  .str { color:#9FD4D0; }
+  .dim { color:#5E6675; }
+
+  /* connect tabs */
+  .connect { border-top:1px solid var(--line); }
+  .tabs { display:flex; gap:6px; margin-top:30px; background:#161D27; border:1px solid var(--line); border-radius:10px; padding:6px; width:fit-content; }
+  .tabs button { font-family:var(--font-mono); font-size:13px; color:#9AA1AD; background:none; border:none; padding:9px 16px; border-radius:7px; cursor:pointer; transition:.15s; }
+  .tabs button.on { background:var(--am-teal); color:#fff; }
+  .codeblock { margin-top:16px; background:#0C1118; border:1px solid var(--line); border-radius:11px; padding:20px 22px; font-family:var(--font-mono); font-size:13.5px; line-height:1.85; white-space:pre-wrap; overflow-x:auto; color:#C7CDD7; }
+  .key { color:var(--am-teal-bright); } .val { color:#9FD4D0; } .pun { color:#6E7682; }
+
+  /* arch */
+  .arch { border-top:1px solid var(--line); background:#0C1118; }
+  .flow { display:flex; align-items:stretch; gap:0; margin-top:42px; flex-wrap:wrap; justify-content:center; }
+  .fbox { flex:1; min-width:148px; background:#131A24; border:1px solid var(--line); border-radius:12px; padding:18px; text-align:center; }
+  .fbox.hl { border-color:var(--am-teal); box-shadow:inset 0 0 0 1px rgba(52,146,142,.4); }
+  .fbox i { font-size:26px; color:var(--am-teal-bright); }
+  .fbox h4 { color:#F3F4F1; font-size:15px; margin:10px 0 5px; font-family:var(--font-ui); }
+  .fbox p { font-size:12px; color:#7E8693; font-family:var(--font-mono); }
+  .farr { display:flex; align-items:center; justify-content:center; padding:0 4px; color:var(--am-terra-bright); font-family:var(--font-mono); }
+
+  .feat3 { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:42px; }
+  .fc { background:#131A24; border:1px solid var(--line); border-radius:12px; padding:24px; }
+  .fc .ic { width:42px;height:42px;border-radius:10px;background:rgba(52,146,142,.14);color:var(--am-teal-bright);display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:16px; }
+  .fc h3 { color:#F0F2EF; font-size:17px; font-family:var(--font-ui); }
+  .fc p { color:#8B93A0; font-size:14px; margin-top:8px; }
+
+  /* pricing */
+  .v3-price { border-top:1px solid var(--line); }
+  .pc3 { max-width:540px; margin:38px auto 0; background:#131A24; border:1px solid var(--am-teal); border-radius:16px; padding:34px; text-align:center; }
+  .pc3 .amt { font-family:var(--font-head); font-size:58px; font-weight:800; color:#F3F4F1; letter-spacing:-.02em; }
+  .pc3 .amt span { font-size:18px; color:#8B93A0; font-weight:600; }
+  .pc3 ul { list-style:none; padding:0; margin:22px 0; text-align:left; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .pc3 ul li { display:flex; gap:9px; align-items:center; color:#C7CDD7; font-size:14px; }
+  .pc3 ul li i { color:var(--am-teal-bright); }
+
+  .sec-title { text-align:center; max-width:680px; margin:0 auto; }
+  .sec-title .eyebrow { display:block; margin-bottom:13px; color:var(--am-teal-bright); }
+  .sec-title h2 { font-size:clamp(28px,3.8vw,42px); color:#F3F4F1; }
+  .sec-title p { color:#8B93A0; font-size:17px; margin-top:14px; }
+
+  footer.v3-foot { border-top:1px solid var(--line); background:#0C1118; }
+  footer.v3-foot .am-wrap { display:grid; grid-template-columns:1.4fr 1fr 1fr 1fr; gap:32px; padding:56px 32px 26px; }
+  footer.v3-foot h4 { color:#E7E9EC; font-size:12px; text-transform:uppercase; letter-spacing:.1em; margin-bottom:15px; font-family:var(--font-mono); }
+  footer.v3-foot a { display:block; color:#8B93A0; font-size:14px; margin-bottom:10px; }
+  footer.v3-foot a:hover { color:#fff; }
+  footer .fb { border-top:1px solid var(--line); } footer .fb .am-wrap { display:flex; justify-content:space-between; padding:20px 32px; } footer .fb span { color:#5E6675; font-size:12.5px; font-family:var(--font-mono); }
+
+  @media (max-width:900px){ .v3-hero .am-wrap{grid-template-columns:1fr;} .v3-nav nav{display:none;} .feat3{grid-template-columns:1fr;} .pc3 ul{grid-template-columns:1fr;} footer.v3-foot .am-wrap{grid-template-columns:1fr 1fr;} .flow{flex-direction:column;align-items:stretch;} .farr{padding:4px 0;transform:rotate(90deg);} }
+</style>
+</head>
+<body class="v3">
+
+<header class="v3-nav">
+  <div class="am-wrap">
+    <span class="am-logo on-dark" data-am-logo="dark" data-icon-w="32"></span>
+    <nav><a href="#connect">// connect</a><a href="#arch">// arch</a><a href="#deploy">// deploy</a><a href="#price">// pricing</a><a href="#">// docs</a></nav>
+    <div class="spacer"></div>
+    <a class="gh" href="#" aria-label="GitHub"><i class="ph ph-github-logo"></i></a>
+    <a class="btn btn-primary btn-sm" href="#">Quickstart</a>
+  </div>
+</header>
+
+<section class="v3-hero">
+  <div class="am-wrap">
+    <div>
+      <span class="tagline">artelmemory — shared memory for agents</span>
+      <h1>Память для агентов<br>в одну <span class="t">команду</span></h1>
+      <p class="lede">Self-hosted слой памяти с семантическим поиском. Поднимается через Docker Compose, подключается к Claude Code, Codex и MCP-клиентам, индексирует локально.</p>
+      <div class="install"><span class="pr">$</span> docker compose up artelmemory <i class="ph ph-copy" title="Скопировать"></i></div>
+      <div class="cta">
+        <a class="btn btn-primary btn-lg" href="#">Quickstart <i class="ph ph-arrow-right"></i></a>
+        <a class="btn btn-onDark btn-lg" href="#arch">Документация</a>
+      </div>
+    </div>
+
+    <div class="term">
+      <div class="tbar"><span class="d" style="background:#E0786A"></span><span class="d" style="background:#E7B85C"></span><span class="d" style="background:#7FB98F"></span><span class="ttl">zsh — artelmemory@local</span></div>
+      <div class="body"><span class="ln"><span class="cmt"># 1. поднять память в своём контуре</span></span>
+<span class="ln"><span class="pmt">➜</span> <span class="arg">docker compose</span> up <span class="flg">-d</span> artelmemory</span>
+<span class="ln"><span class="out">✓ qdrant</span>      <span class="dim">started  :6333</span></span>
+<span class="ln"><span class="out">✓ embeddings</span>  <span class="dim">local model loaded</span></span>
+<span class="ln"><span class="out">✓ api</span>         <span class="ok2">ready    http://localhost:8787</span></span>
+<span class="ln"> </span>
+<span class="ln"><span class="cmt"># 2. агент записывает решение в общую память</span></span>
+<span class="ln"><span class="pmt">➜</span> <span class="arg">artel</span> mem write <span class="flg">--ns</span> <span class="str">team-core</span> <span class="flg">--tag</span> <span class="str">decision</span></span>
+<span class="ln">  <span class="str">"prod → PostgreSQL profile, миграции через Alembic"</span></span>
+<span class="ln"><span class="ok2">  ✓ stored</span> <span class="dim">id=mem_a1f9  outcome=inserted</span></span>
+<span class="ln"> </span>
+<span class="ln"><span class="cmt"># 3. другой агент достаёт контекст семантически</span></span>
+<span class="ln"><span class="pmt">➜</span> <span class="arg">artel</span> mem search <span class="flg">--ns</span> <span class="str">team-core</span> <span class="str">"как деплоим prod"</span></span>
+<span class="ln"><span class="dim">  0.94</span> <span class="out">prod → PostgreSQL profile, миграции…</span> <span class="ok2">fresh</span></span>
+<span class="ln"><span class="dim">  0.88</span> <span class="out">deploy-скрипт для КР-региона…</span>       <span class="dim">stale</span></span>
+<span class="ln"><span class="dim">  ⮑ 2 results · 38ms · local embeddings</span></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- CONNECT -->
+<section class="section connect" id="connect">
+  <div class="am-wrap">
+    <div class="sec-title"><span class="eyebrow">// connect</span><h2>Подключите агента за минуты</h2><p>MCP-сервер и REST API. Работает с любым клиентом, который умеет в инструменты.</p></div>
+    <div style="display:flex;flex-direction:column;align-items:center">
+      <div class="tabs" id="tabs">
+        <button class="on" data-t="mcp">claude-code · MCP</button>
+        <button data-t="curl">REST · curl</button>
+        <button data-t="env">.env</button>
+      </div>
+    </div>
+    <div style="max-width:760px;margin:0 auto">
+      <div class="codeblock" id="cb"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ARCH -->
+<section class="section arch" id="arch">
+  <div class="am-wrap">
+    <div class="sec-title"><span class="eyebrow">// architecture</span><h2>Поток памяти</h2></div>
+    <div class="flow">
+      <div class="fbox"><i class="ph ph-robot"></i><h4>AI-агенты</h4><p>claude · codex · opencode</p></div>
+      <div class="farr">→</div>
+      <div class="fbox hl"><i class="ph ph-plugs-connected"></i><h4>ArtelMemory API</h4><p>MCP · REST · CSRF</p></div>
+      <div class="farr">→</div>
+      <div class="fbox"><i class="ph ph-funnel"></i><h4>Pipeline</h4><p>dedup · decay · staleness</p></div>
+      <div class="farr">→</div>
+      <div class="fbox"><i class="ph ph-stack"></i><h4>Storage</h4><p>SQLite + Qdrant</p></div>
+      <div class="farr">↺</div>
+      <div class="fbox"><i class="ph ph-arrow-u-up-left"></i><h4>Контекст</h4><p>relevant memory</p></div>
+    </div>
+    <div class="feat3">
+      <div class="fc"><div class="ic"><i class="ph ph-shield-check"></i></div><h3>Local-only режим</h3><p>Документы и embeddings не покидают ваш контур. Никаких внешних облаков.</p></div>
+      <div class="fc"><div class="ic"><i class="ph ph-magnifying-glass"></i></div><h3>Семантический поиск</h3><p>Qdrant + локальные модели с RU-контекстом. Payload-фильтрация по namespace.</p></div>
+      <div class="fc"><div class="ic"><i class="ph ph-recycle"></i></div><h3>Lifecycle памяти</h3><p>decay, soft/hard-delete, staleness-аудит и dedup — память не превращается в свалку.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- DEPLOY -->
+<section class="section" id="deploy" style="border-top:1px solid var(--line)">
+  <div class="am-wrap">
+    <div class="sec-title"><span class="eyebrow">// deploy</span><h2>Профили развёртывания</h2></div>
+    <div class="feat3">
+      <div class="fc"><h3 style="font-family:var(--font-mono);color:var(--am-teal-bright)">start</h3><p style="font-family:var(--font-mono);margin-top:12px;color:#C7CDD7">2 vCPU · 8 GB<br>SQLite + Qdrant<br>local embeddings</p><p style="margin-top:14px">Команды и пилоты.</p></div>
+      <div class="fc" style="border-color:var(--am-teal)"><span class="badge badge-teal" style="margin-bottom:12px">рекомендуем</span><h3 style="font-family:var(--font-mono);color:var(--am-teal-bright)">production</h3><p style="font-family:var(--font-mono);margin-top:12px;color:#C7CDD7">4–8 vCPU · 16 GB<br>PostgreSQL + Qdrant<br>local embeddings</p><p style="margin-top:14px">Рабочий профиль.</p></div>
+      <div class="fc"><h3 style="font-family:var(--font-mono);color:var(--am-teal-bright)">enterprise</h3><p style="font-family:var(--font-mono);margin-top:12px;color:#C7CDD7">8+ vCPU · 32+ GB<br>Qdrant Cluster<br>контроль + SLA</p><p style="margin-top:14px">Крупные контуры.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="section v3-price" id="price">
+  <div class="am-wrap">
+    <div class="sec-title"><span class="eyebrow">// pricing</span><h2>$5. Один план. Весь продукт.</h2></div>
+    <div class="pc3">
+      <div class="amt">$5<span> / agent / mo</span></div>
+      <p style="color:#8B93A0;margin-top:8px;font-family:var(--font-mono);font-size:13px">flat · self-hosted · CIS</p>
+      <ul>
+        <li><i class="ph-bold ph-check"></i> unlimited memory</li>
+        <li><i class="ph-bold ph-check"></i> qdrant search</li>
+        <li><i class="ph-bold ph-check"></i> local embeddings</li>
+        <li><i class="ph-bold ph-check"></i> mcp + rest</li>
+        <li><i class="ph-bold ph-check"></i> local-only mode</li>
+        <li><i class="ph-bold ph-check"></i> updates + support</li>
+      </ul>
+      <a class="btn btn-primary btn-lg" href="#" style="width:100%">git clone && docker compose up</a>
+    </div>
+  </div>
+</section>
+
+<footer class="v3-foot">
+  <div class="am-wrap">
+    <div><span class="am-logo on-dark" data-am-logo="dark"></span><p style="color:#7E8693;font-size:14px;margin-top:16px;max-width:280px;font-family:var(--font-mono)">shared memory for ai agents.<br>self-hosted · CIS-ready.</p></div>
+    <div><h4>product</h4><a href="#connect">connect</a><a href="#arch">architecture</a><a href="#deploy">deploy</a><a href="#price">pricing</a></div>
+    <div><h4>resources</h4><a href="#">docs</a><a href="#">api ref</a><a href="#">github</a><a href="#">changelog</a></div>
+    <div><h4>контур</h4><a href="#">РФ и СНГ</a><a href="#">local-only</a><a href="#">security</a><a href="#">contact</a></div>
+  </div>
+  <div class="fb"><div class="am-wrap"><span>© 2026 artelmemory</span><span>память остаётся в вашем контуре</span></div></div>
+</footer>
+
+<script src="../am-logo.js"></script>
+<script>
+  const CODE = {
+    mcp: `<span class="pun">{</span>
+  <span class="key">"mcpServers"</span><span class="pun">: {</span>
+    <span class="key">"artelmemory"</span><span class="pun">: {</span>
+      <span class="key">"command"</span><span class="pun">:</span> <span class="val">"artel-mcp"</span><span class="pun">,</span>
+      <span class="key">"args"</span><span class="pun">: [</span><span class="val">"--ns"</span><span class="pun">,</span> <span class="val">"team-core"</span><span class="pun">],</span>
+      <span class="key">"env"</span><span class="pun">: {</span> <span class="key">"ARTEL_URL"</span><span class="pun">:</span> <span class="val">"http://localhost:8787"</span> <span class="pun">}</span>
+    <span class="pun">}</span>
+  <span class="pun">}</span>
+<span class="pun">}</span>`,
+    curl: `<span class="pun">$</span> curl http://localhost:8787<span class="key">/api/memory</span> \\
+  -H <span class="val">"Authorization: Bearer sam_pat_ab…"</span> \\
+  -H <span class="val">"Content-Type: application/json"</span> \\
+  -d <span class="val">'{ "namespace": "team-core",
+        "content": "prod → PostgreSQL profile",
+        "tags": ["decision","infra"] }'</span>
+
+<span class="pun">→</span> <span class="val">{ "id": "mem_a1f9", "outcome": "inserted" }</span>`,
+    env: `<span class="key">ARTEL_BIND</span><span class="pun">=</span><span class="val">127.0.0.1:8787</span>
+<span class="key">QDRANT_URL</span><span class="pun">=</span><span class="val">http://qdrant:6333</span>
+<span class="key">DB_URL</span><span class="pun">=</span><span class="val">sqlite:///data/artel.db</span>
+<span class="key">EMBEDDINGS</span><span class="pun">=</span><span class="val">local</span>      <span class="pun">#</span> <span class="dim">local | yandexgpt | gigachat</span>
+<span class="key">LOCAL_ONLY</span><span class="pun">=</span><span class="val">true</span>       <span class="pun">#</span> <span class="dim">документы не покидают контур</span>
+<span class="key">REGION</span><span class="pun">=</span><span class="val">kg</span>             <span class="pun">#</span> <span class="dim">ru | kg | kz | uz | tj</span>`
+  };
+  const cb = document.getElementById('cb');
+  function setTab(t){ cb.innerHTML = CODE[t]; document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on', b.dataset.t===t)); }
+  document.querySelectorAll('#tabs button').forEach(b=> b.addEventListener('click', ()=> setTab(b.dataset.t)));
+  setTab('mcp');
+</script>
+</body>
+</html>
