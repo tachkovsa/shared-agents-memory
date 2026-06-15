@@ -7,6 +7,16 @@ and a GitHub Release via `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+### Added
+
+- **Single-domain deploy layout for the console** (`/console` subpath). The
+  operator SPA now builds with `base=/console/` (override via `CONSOLE_BASE`) and
+  the router picks up the basename from `import.meta.env.BASE_URL`, so it can be
+  served alongside a marketing landing on one apex domain. New
+  `deploy/nginx-artelmemory.conf`: `/` → landing (static), `/mcp`+`/healthz` →
+  MCP (:8080), `/console` (prefix-stripped) + `/api/admin` → console (:8081).
+  The admin listener stays root-relative; the reverse proxy strips `/console`.
+
 ## [0.3.0] — 2026-06-15
 
 ### Added

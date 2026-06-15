@@ -9,6 +9,11 @@ const here = import.meta.dirname;
 // prod builds into the repo's dist/admin-public, served by @fastify/static.
 export default defineConfig({
   root: here,
+  // Served under /console on the single-domain layout (landing owns /). The
+  // reverse proxy strips the prefix before the admin Fastify listener, so the
+  // app stays root-relative internally; only asset URLs + the router basename
+  // carry /console. Override with CONSOLE_BASE=/ for a root-served deployment.
+  base: process.env.CONSOLE_BASE ?? '/console/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
