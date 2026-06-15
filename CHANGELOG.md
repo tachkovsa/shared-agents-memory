@@ -7,7 +7,24 @@ and a GitHub Release via `.github/workflows/release.yml`.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-06-15
+
 ### Added
+
+- **ArtelMemory operator console + landing page** (ADR-0008/0009). The admin
+  console is now a complete operator UI (React 19 + Router + TanStack Query +
+  Tailwind), rebranded to the **ArtelMemory** visual identity (technical
+  identifiers — package name, `sam_*` tokens, `sam_admin_session` cookie — are
+  unchanged). Screens: Overview · Namespaces (create/share/unshare) · Memory
+  (semantic search, write, delete, infinite scroll) · PAT (create/reveal-once/
+  revoke/rotate/delete) · Rules (read + author) · Audit · Observability ·
+  Billing (demo) · Login/Setup. Plus a static marketing landing (`landing/`).
+
+- **Admin BFF mutation endpoints** (ADR-0008). Backing the console's write
+  actions: namespace create + member share/unshare, memory write + search, PAT
+  rotate + delete, rule create, billing read. CSRF is enforced for all non-GET
+  requests inside `requireAuth`; namespace ids are traversal-guarded. PAT
+  lifecycle ops (mint/rotate/revoke/delete) are serialized on a write mutex.
 
 - **Local embeddings deploy bundle — TEI + bge-m3** (ADR-0010 §3.4). New
   `docker-compose.embedder.yml` overlay adds a Hugging Face text-embeddings-inference
