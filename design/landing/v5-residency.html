@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ArtelMemory — Резидентность (V5)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">
+<link rel="stylesheet" href="../brand.css">
+<style>
+  /* ---------- V5 Резидентность : data residency / trust ---------- */
+  body { background:var(--am-cream); }
+  .v5-nav { position:sticky; top:0; z-index:50; background:rgba(243,238,228,.86); backdrop-filter:blur(12px); border-bottom:1px solid var(--border); }
+  .v5-nav .am-wrap { display:flex; align-items:center; gap:34px; height:74px; }
+  .v5-nav nav { display:flex; gap:26px; margin-left:6px; }
+  .v5-nav nav a { font-size:15px; color:var(--fg-2); font-weight:500; }
+  .v5-nav nav a:hover { color:var(--am-teal); }
+  .v5-nav .spacer { flex:1; }
+
+  .v5-hero .am-wrap { display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:center; padding:64px 32px 72px; }
+  .v5-hero .eyebrow { display:inline-flex; align-items:center; gap:8px; margin-bottom:18px; }
+  .v5-hero h1 { font-size:clamp(38px,5vw,58px); font-weight:800; letter-spacing:-.02em; line-height:1.04; }
+  .v5-hero h1 .t { color:var(--am-teal); }
+  .v5-hero .lede { color:var(--fg-2); font-size:18.5px; margin-top:20px; max-width:520px; line-height:1.6; }
+  .v5-hero .cta { display:flex; gap:13px; margin-top:28px; flex-wrap:wrap; }
+  .v5-hero .note { margin-top:18px; font-size:13.5px; color:var(--fg-3); display:flex; gap:9px; align-items:flex-start; max-width:480px; }
+  .v5-hero .note i { color:var(--am-teal); margin-top:2px; }
+
+  /* контур perimeter visual */
+  .perim { position:relative; padding:30px; }
+  .ext { display:flex; gap:10px; justify-content:center; margin-bottom:18px; flex-wrap:wrap; }
+  .ext .ec { display:inline-flex; align-items:center; gap:8px; font-size:12.5px; color:var(--am-slate-2); background:rgba(255,255,255,.5); border:1px dashed var(--border-strong); padding:7px 12px; border-radius:8px; font-family:var(--font-mono); }
+  .ext .ec i { color:#B4ABA0; }
+  .ext-lbl { text-align:center; font-size:11px; font-family:var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--am-slate-2); margin-bottom:10px; }
+  .boundary { position:relative; border:2px dashed var(--am-teal); border-radius:20px; background:linear-gradient(180deg,var(--am-teal-tint),var(--surface)); padding:24px 22px 22px; box-shadow:var(--sh-md); }
+  .boundary .tag { position:absolute; top:-13px; left:24px; background:var(--am-teal); color:#fff; font-size:12px; font-weight:600; padding:5px 13px; border-radius:99px; display:inline-flex; align-items:center; gap:7px; }
+  .boundary .tag i { font-size:14px; }
+  .core-row { display:flex; align-items:center; justify-content:center; gap:16px; padding:8px 0 18px; }
+  .core-row .lbl { font-family:var(--font-head); font-weight:700; font-size:18px; }
+  .core-row .lbl span { color:var(--am-teal); }
+  .store-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .store-row .sc { background:var(--surface); border:1px solid var(--border); border-radius:11px; padding:13px 14px; display:flex; align-items:center; gap:11px; }
+  .store-row .sc i { font-size:20px; color:var(--am-teal); } .store-row .sc.terra i{color:var(--am-terra);}
+  .store-row .sc b { font-size:14px; display:block; } .store-row .sc small { font-size:11.5px; color:var(--fg-3); font-family:var(--font-mono); }
+  .store-row .sc.wide { grid-column:1/-1; }
+  .lockwire { position:absolute; right:-1px; top:50%; }
+
+  /* residency / map */
+  .resid { background:var(--surface); border-top:1px solid var(--border); }
+  .resid-grid { display:grid; grid-template-columns:1.05fr .95fr; gap:46px; align-items:center; }
+  .mapcard { background:var(--am-graphite); border-radius:18px; padding:30px; position:relative; overflow:hidden; box-shadow:var(--sh-lg); }
+  .mapcard .mtitle { color:#EDECE6; font-family:var(--font-head); font-weight:700; font-size:17px; margin-bottom:4px; }
+  .mapcard .msub { color:#9098A6; font-size:12.5px; font-family:var(--font-mono); margin-bottom:8px; }
+  .mapcard svg { width:100%; height:auto; display:block; }
+  .pin-pulse { transform-origin:center; animation:pp 2.4s ease-out infinite; }
+  @keyframes pp { 0%{ r:5; opacity:.7;} 70%{ r:20; opacity:0;} 100%{opacity:0;} }
+  @media (prefers-reduced-motion: reduce){ .pin-pulse{ animation:none; } }
+
+  .jlist { display:flex; flex-direction:column; gap:12px; }
+  .jrow { display:flex; align-items:center; gap:15px; padding:16px 18px; background:var(--am-cream-50); border:1px solid var(--border); border-radius:12px; }
+  .jrow .fl { width:34px; height:24px; border-radius:4px; flex:none; box-shadow:inset 0 0 0 1px rgba(0,0,0,.08); }
+  .jrow b { font-size:15.5px; } .jrow small { color:var(--fg-3); font-size:13px; display:block; }
+  .jrow .st { margin-left:auto; font-family:var(--font-mono); font-size:11.5px; color:var(--am-teal-press); background:var(--am-teal-soft); padding:5px 11px; border-radius:99px; white-space:nowrap; }
+
+  /* providers */
+  .prov { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin-top:30px; }
+  .prov .pchip { display:inline-flex; align-items:center; gap:9px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:11px 16px; font-size:14px; font-weight:500; }
+  .prov .pchip i { color:var(--am-teal); font-size:18px; }
+
+  .feat5 { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:44px; }
+  .fc { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:24px; }
+  .fc .ic{width:44px;height:44px;border-radius:11px;background:var(--am-teal-tint);color:var(--am-teal);display:flex;align-items:center;justify-content:center;font-size:23px;margin-bottom:15px;}
+  .fc h3{font-size:18px;} .fc p{color:var(--fg-3);font-size:14.5px;margin-top:8px;}
+
+  .v5-deploy{background:var(--am-graphite);color:#E7E7ED;}
+  .v5-deploy .sec-title h2{color:#F4F3EE;} .v5-deploy .sec-title p{color:#A2A8B4;}
+  .pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:40px;}
+  .pcard{background:var(--am-graphite-700);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:24px;}
+  .pcard.rec{border-color:var(--am-teal);} .pcard h3{color:#F4F3EE;font-size:19px;}
+  .pcard .ic{width:40px;height:40px;border-radius:10px;background:rgba(52,146,142,.16);color:var(--am-teal-bright);display:flex;align-items:center;justify-content:center;font-size:21px;margin-bottom:14px;}
+  .pcard ul{list-style:none;padding:0;margin:14px 0 0;display:flex;flex-direction:column;gap:9px;} .pcard ul li{font-size:14px;color:#C2C7D1;display:flex;gap:9px;align-items:center;} .pcard ul li i{color:var(--am-teal-bright);} .pcard ul li .mono{color:#E7E7ED;font-size:12.5px;white-space:nowrap;}
+
+  .v5-price{background:var(--surface);border-top:1px solid var(--border);}
+  .pc{max-width:520px;margin:38px auto 0;text-align:center;border:2px solid var(--am-teal);border-radius:18px;padding:36px;background:var(--am-cream-50);}
+  .pc .amt{font-family:var(--font-head);font-size:60px;font-weight:800;letter-spacing:-.02em;} .pc .amt span{font-size:19px;color:var(--fg-3);font-weight:600;}
+  .pc ul{list-style:none;padding:0;margin:22px 0;text-align:left;display:grid;grid-template-columns:1fr 1fr;gap:11px;} .pc ul li{display:flex;gap:9px;align-items:center;font-size:14.5px;color:var(--fg-2);} .pc ul li i{color:var(--am-teal);}
+
+  .sec-title{text-align:center;max-width:700px;margin:0 auto;} .sec-title .eyebrow{display:block;margin-bottom:12px;} .sec-title h2{font-size:clamp(28px,3.8vw,42px);} .sec-title p{color:var(--fg-3);font-size:17px;margin-top:14px;}
+  .cta-final{text-align:center;background:var(--am-cream);border-top:1px solid var(--border);} .cta-final h2{font-size:clamp(30px,4vw,46px);} .cta-final p{color:var(--fg-3);font-size:18px;margin:16px auto 30px;max-width:560px;}
+  footer.am-footer .am-wrap{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px;padding:58px 32px 26px;} footer.am-footer h4{color:#fff;font-size:13px;text-transform:uppercase;letter-spacing:.1em;font-weight:600;margin-bottom:15px;} footer.am-footer a{display:block;color:#A7ACB6;font-size:14.5px;margin-bottom:11px;} footer.am-footer a:hover{color:#fff;}
+  footer .foot-bottom{border-top:1px solid rgba(255,255,255,.08);} footer .foot-bottom .am-wrap{display:flex;justify-content:space-between;padding:22px 32px;} footer .foot-bottom span{color:#7E848F;font-size:13px;}
+
+  @media (max-width:920px){ .v5-nav nav{display:none;} .v5-hero .am-wrap{grid-template-columns:1fr;} .resid-grid{grid-template-columns:1fr;gap:28px;} .feat5,.pgrid{grid-template-columns:1fr;} .pc ul{grid-template-columns:1fr;} footer.am-footer .am-wrap{grid-template-columns:1fr 1fr;} }
+</style>
+</head>
+<body>
+
+<header class="v5-nav">
+  <div class="am-wrap">
+    <span class="am-logo" data-am-logo></span>
+    <nav><a href="#resid">Резидентность</a><a href="#prov">Провайдеры</a><a href="#deploy">Развёртывание</a><a href="#price">Цены</a><a href="#">Документация</a></nav>
+    <div class="spacer"></div>
+    <a class="btn btn-ghost btn-sm" href="#"><i class="ph ph-github-logo"></i> GitHub</a>
+    <a class="btn btn-primary btn-sm" href="#">Начать</a>
+  </div>
+</header>
+
+<section class="v5-hero">
+  <div class="am-wrap">
+    <div>
+      <span class="eyebrow"><i class="ph-bold ph-shield-check"></i> Резидентность данных · РФ и СНГ</span>
+      <h1>Данные остаются<br>в вашем <span class="t">контуре</span></h1>
+      <p class="lede">ArtelMemory разворачивается в вашей инфраструктуре и работает в local-only режиме: документы и embeddings не покидают периметр. Память для агентов — без передачи контекста наружу.</p>
+      <div class="cta">
+        <a class="btn btn-primary btn-lg" href="#">Начать развёртывание <i class="ph ph-arrow-right"></i></a>
+        <a class="btn btn-secondary btn-lg" href="#resid">Профили резидентности</a>
+      </div>
+      <p class="note"><i class="ph-bold ph-info"></i> Профили развёртывания помогают согласовать архитектуру с локальными требованиями к данным. Это не юридическая гарантия соответствия.</p>
+    </div>
+
+    <!-- ПЕРИМЕТР -->
+    <div class="perim">
+      <div class="ext-lbl">внешние облака</div>
+      <div class="ext">
+        <span class="ec"><i class="ph ph-cloud-slash"></i> публичный LLM</span>
+        <span class="ec"><i class="ph ph-cloud-slash"></i> внешнее хранилище</span>
+        <span class="ec"><i class="ph ph-cloud-slash"></i> SaaS-индексатор</span>
+      </div>
+      <div class="boundary">
+        <span class="tag"><i class="ph-bold ph-lock-key"></i> Ваш контур · on-prem</span>
+        <div class="core-row">
+          <svg width="84" height="70" viewBox="0 0 72 60" data-am-icon="brand"></svg>
+          <div class="lbl">Artel<span>Memory</span><div style="font-family:var(--font-ui);font-weight:400;font-size:12.5px;color:var(--fg-3);margin-top:2px">общий слой памяти агентов</div></div>
+        </div>
+        <div class="store-row">
+          <div class="sc"><i class="ph ph-cube"></i><div><b>Qdrant</b><small>векторы</small></div></div>
+          <div class="sc"><i class="ph ph-database"></i><div><b>SQLite</b><small>метаданные</small></div></div>
+          <div class="sc wide terra"><i class="ph ph-cpu"></i><div><b>Локальные embeddings</b><small>индексирование без передачи документов</small></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- RESIDENCY -->
+<section class="section resid" id="resid">
+  <div class="am-wrap">
+    <div class="sec-title"><span class="eyebrow">География развёртывания</span><h2>Разворачивайте в нужной юрисдикции</h2><p>Выбирайте регион хостинга — данные хранятся там, где это нужно вашей организации.</p></div>
+    <div class="resid-grid" style="margin-top:44px">
+      <div class="mapcard">
+        <div class="mtitle">Регионы хостинга</div>
+        <div class="msub">on-prem · cloud в выбранной юрисдикции</div>
+        <svg viewBox="0 0 520 320" xmlns="http://www.w3.org/2000/svg" aria-label="Стилизованная карта регионов СНГ">
+          <!-- stylized abstract landmass -->
+          <path d="M40 130 C70 96 150 78 210 92 C250 100 300 84 360 96 C420 108 480 120 486 168 C492 214 440 250 372 256 C320 260 270 244 214 252 C150 262 92 250 64 220 C40 196 26 160 40 130 Z"
+                fill="rgba(52,146,142,.12)" stroke="rgba(52,146,142,.4)" stroke-width="1.5"/>
+          <!-- dotted grid texture -->
+          <g fill="rgba(255,255,255,.10)">
+            <!-- subtle dots -->
+            <circle cx="120" cy="150" r="1.6"/><circle cx="160" cy="140" r="1.6"/><circle cx="200" cy="160" r="1.6"/><circle cx="250" cy="150" r="1.6"/><circle cx="300" cy="140" r="1.6"/><circle cx="350" cy="160" r="1.6"/><circle cx="400" cy="170" r="1.6"/>
+            <circle cx="140" cy="190" r="1.6"/><circle cx="190" cy="200" r="1.6"/><circle cx="240" cy="195" r="1.6"/><circle cx="300" cy="200" r="1.6"/><circle cx="360" cy="200" r="1.6"/>
+          </g>
+          <!-- pins -->
+          <g font-family="JetBrains Mono, monospace" font-size="11" fill="#D7DBE2">
+            <!-- РФ -->
+            <circle class="pin-pulse" cx="150" cy="120" r="5" fill="none" stroke="#34928E"/>
+            <circle cx="150" cy="120" r="5" fill="#34928E"/><text x="162" y="118">РФ</text>
+            <!-- КЗ -->
+            <circle class="pin-pulse" cx="290" cy="150" r="5" fill="none" stroke="#34928E"/>
+            <circle cx="290" cy="150" r="5" fill="#34928E"/><text x="302" y="148">КЗ</text>
+            <!-- КР -->
+            <circle class="pin-pulse" cx="330" cy="195" r="5" fill="none" stroke="#C96A4A"/>
+            <circle cx="330" cy="195" r="5" fill="#C96A4A"/><text x="342" y="200" fill="#E5B6A4">КР</text>
+            <!-- УЗ -->
+            <circle class="pin-pulse" cx="270" cy="210" r="5" fill="none" stroke="#34928E"/>
+            <circle cx="270" cy="210" r="5" fill="#34928E"/><text x="244" y="228">УЗ</text>
+            <!-- ТЖ -->
+            <circle class="pin-pulse" cx="320" cy="235" r="5" fill="none" stroke="#34928E"/>
+            <circle cx="320" cy="235" r="5" fill="#34928E"/><text x="332" y="240">ТЖ</text>
+          </g>
+        </svg>
+        <div style="display:flex;gap:16px;margin-top:14px;flex-wrap:wrap">
+          <span style="display:inline-flex;align-items:center;gap:7px;color:#9098A6;font-size:12px;font-family:var(--font-mono)"><i style="width:8px;height:8px;border-radius:50%;background:#34928E;display:inline-block"></i> активный регион</span>
+          <span style="display:inline-flex;align-items:center;gap:7px;color:#9098A6;font-size:12px;font-family:var(--font-mono)"><i style="width:8px;height:8px;border-radius:50%;background:#C96A4A;display:inline-block"></i> первый рынок</span>
+        </div>
+      </div>
+
+      <div class="jlist">
+        <div class="jrow"><span class="fl" style="background:linear-gradient(180deg,#fff 33%,#0039A6 33% 66%,#D52B1E 66%)"></span><div><b>Россия</b><small>Данные хранятся в РФ · 152-ФЗ-ready архитектура</small></div><span class="st">on-prem</span></div>
+        <div class="jrow"><span class="fl" style="background:#E8112D"></span><div><b>Кыргызстан</b><small>Хостинг в КР · первый рынок</small></div><span class="st">on-prem</span></div>
+        <div class="jrow"><span class="fl" style="background:linear-gradient(180deg,#00AFCA,#00AFCA)"></span><div><b>Казахстан</b><small>Хостинг в РК</small></div><span class="st">on-prem</span></div>
+        <div class="jrow"><span class="fl" style="background:linear-gradient(180deg,#0099B5 50%,#1EB53A 50%)"></span><div><b>Узбекистан</b><small>Хостинг в РУз</small></div><span class="st">on-prem</span></div>
+        <div class="jrow"><span class="fl" style="background:linear-gradient(180deg,#CC0000 33%,#fff 33% 66%,#006600 66%)"></span><div><b>Таджикистан</b><small>Хостинг в РТ</small></div><span class="st">on-prem</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROVIDERS -->
+<section class="section" id="prov" style="background:var(--am-cream-50);border-top:1px solid var(--border)">
+  <div class="am-wrap">
+    <div class="sec-title"><span class="eyebrow">LLM и embeddings</span><h2>Локальные и региональные провайдеры</h2><p>Подключайте провайдера под политику вашего контура — от полностью локальных моделей до региональных API.</p></div>
+    <div class="prov">
+      <span class="pchip"><i class="ph ph-cpu"></i> Local embeddings</span>
+      <span class="pchip"><i class="ph ph-cloud"></i> YandexGPT</span>
+      <span class="pchip"><i class="ph ph-cloud"></i> GigaChat</span>
+      <span class="pchip"><i class="ph ph-hard-drives"></i> Ollama</span>
+      <span class="pchip"><i class="ph ph-hard-drives"></i> vLLM</span>
+      <span class="pchip"><i class="ph ph-globe-hemisphere-east"></i> OpenRouter</span>
+    </div>
+    <div class="feat5">
+      <div class="fc"><div class="ic"><i class="ph ph-lock-key"></i></div><h3>Local-only режим</h3><p>Документы и embeddings остаются внутри инфраструктуры. Внешние вызовы можно отключить.</p></div>
+      <div class="fc"><div class="ic"><i class="ph ph-sliders"></i></div><h3>Гибкая политика</h3><p>Выбирайте, какие данные куда передаются — на уровне namespace и провайдера.</p></div>
+      <div class="fc"><div class="ic"><i class="ph ph-list-checks"></i></div><h3>Аудит и контроль</h3><p>Журнал событий, PAT-токены с областями доступа и квоты по namespace.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- DEPLOY -->
+<section class="section v5-deploy" id="deploy">
+  <div class="am-wrap">
+    <div class="sec-title"><span class="eyebrow" style="color:var(--am-teal-bright)">Развёртывание</span><h2>Профили под вашу инфраструктуру</h2><p>От лёгкого старта до enterprise-контура.</p></div>
+    <div class="pgrid">
+      <div class="pcard"><div class="ic"><i class="ph ph-house"></i></div><h3>Для старта</h3><ul><li><i class="ph ph-cpu"></i> <span class="mono">2 vCPU / 8 GB</span></li><li><i class="ph ph-database"></i> SQLite + Qdrant</li><li><i class="ph ph-cpu"></i> Локальные embeddings</li></ul></div>
+      <div class="pcard rec"><span class="badge badge-teal" style="margin-bottom:12px">Рекомендуем</span><div class="ic"><i class="ph ph-hard-drives"></i></div><h3>Production</h3><ul><li><i class="ph ph-cpu"></i> <span class="mono">4–8 vCPU / 16 GB</span></li><li><i class="ph ph-database"></i> PostgreSQL + Qdrant</li><li><i class="ph ph-cpu"></i> Локальные embeddings</li></ul></div>
+      <div class="pcard"><div class="ic"><i class="ph ph-buildings"></i></div><h3>Enterprise</h3><ul><li><i class="ph ph-cpu"></i> <span class="mono">8+ vCPU / 32+ GB</span></li><li><i class="ph ph-stack"></i> Qdrant Cluster</li><li><i class="ph ph-shield-check"></i> Контроль и SLA</li></ul></div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="section v5-price" id="price">
+  <div class="am-wrap">
+    <div class="sec-title"><span class="eyebrow">Цены</span><h2>Одна подписка. Фиксированная цена.</h2></div>
+    <div class="pc">
+      <span class="badge badge-terra" style="margin-bottom:14px">Self-hosted · CIS</span>
+      <div class="amt">$5<span> / агент в месяц</span></div>
+      <p style="color:var(--fg-3);margin-top:10px">Весь продукт. Разворачивается в вашем контуре.</p>
+      <ul><li><i class="ph-bold ph-check"></i> Неограниченная память</li><li><i class="ph-bold ph-check"></i> Qdrant-поиск</li><li><i class="ph-bold ph-check"></i> Локальные embeddings</li><li><i class="ph-bold ph-check"></i> Все интеграции</li><li><i class="ph-bold ph-check"></i> Local-only режим</li><li><i class="ph-bold ph-check"></i> Поддержка и обновления</li></ul>
+      <a class="btn btn-primary btn-lg" href="#" style="width:100%">Начать развёртывание</a>
+    </div>
+  </div>
+</section>
+
+<section class="section cta-final">
+  <div class="am-wrap">
+    <h2>Ваш контур. Ваши данные.<br>Общая память для агентов.</h2>
+    <p>Разверните ArtelMemory в нужной юрисдикции и держите контекст под контролем.</p>
+    <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap"><a class="btn btn-primary btn-lg" href="#">Начать развёртывание <i class="ph ph-arrow-right"></i></a><a class="btn btn-secondary btn-lg" href="#"><i class="ph ph-github-logo"></i> GitHub</a></div>
+  </div>
+</section>
+
+<footer class="am-footer">
+  <div class="am-wrap">
+    <div><span class="am-logo on-dark" data-am-logo="dark"></span><p style="color:#9098A6;font-size:14.5px;margin-top:16px;max-width:280px">Единая память для ваших ИИ-агентов. Self-hosted инфраструктура для CIS-команд.</p></div>
+    <div><h4>Продукт</h4><a href="#resid">Резидентность</a><a href="#prov">Провайдеры</a><a href="#deploy">Развёртывание</a><a href="#price">Цены</a></div>
+    <div><h4>Ресурсы</h4><a href="#">Документация</a><a href="#">API-референс</a><a href="#">GitHub</a><a href="#">Changelog</a></div>
+    <div><h4>Контур</h4><a href="#">РФ и СНГ</a><a href="#">Local-only</a><a href="#">Безопасность</a><a href="#">Контакты</a></div>
+  </div>
+  <div class="foot-bottom"><div class="am-wrap"><span>© 2026 ArtelMemory. Сделано для CIS.</span><span>Память остаётся в вашем контуре.</span></div></div>
+</footer>
+
+<script src="../am-logo.js"></script>
+</body>
+</html>

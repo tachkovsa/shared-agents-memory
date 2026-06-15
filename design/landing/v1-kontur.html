@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ArtelMemory — Контур (V1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">
+<link rel="stylesheet" href="../brand.css">
+<style>
+  /* ---------- V1 Контур : dark-infra ---------- */
+  .v1-nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(22,28,38,.86); backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(255,255,255,.07);
+  }
+  .v1-nav .am-wrap { display: flex; align-items: center; gap: 32px; height: 74px; }
+  .v1-nav nav { display: flex; gap: 28px; margin-left: 12px; }
+  .v1-nav nav a { font-size: 15px; color: #B9BEC9; font-weight: 500; transition: color .15s; }
+  .v1-nav nav a:hover { color: #fff; }
+  .v1-nav .spacer { flex: 1; }
+  .v1-nav .gh { color: #B9BEC9; font-size: 22px; display: inline-flex; }
+  .v1-nav .gh:hover { color: #fff; }
+
+  .v1-hero { background: var(--am-graphite); color: #EAEAF0; position: relative; overflow: hidden; }
+  .v1-hero::before {
+    content:""; position:absolute; inset:0;
+    background:
+      radial-gradient(900px 500px at 78% 30%, rgba(43,125,122,.22), transparent 60%),
+      radial-gradient(600px 400px at 20% 90%, rgba(201,106,74,.10), transparent 60%);
+    pointer-events:none;
+  }
+  .v1-hero .am-wrap { position: relative; display: grid; grid-template-columns: 1.05fr .95fr; gap: 40px; align-items: center; padding-top: 76px; padding-bottom: 90px; }
+  .v1-hero h1 { font-size: clamp(40px, 5.4vw, 66px); line-height: 1.02; color: #F4F3EE; font-weight: 800; letter-spacing: -0.02em; }
+  .v1-hero h1 .accent { color: var(--am-teal-bright); }
+  .v1-hero .lede { color: #B7BCC7; font-size: 19px; margin-top: 22px; max-width: 540px; line-height: 1.6; }
+  .v1-hero .pill {
+    display:inline-flex; align-items:center; gap:9px; font-size:13.5px; font-weight:500;
+    color:#CFE6E4; background: rgba(43,125,122,.16); border:1px solid rgba(52,146,142,.34);
+    padding:8px 15px; border-radius: var(--r-pill); margin-bottom: 26px;
+  }
+  .v1-hero .pill .dot{ width:8px;height:8px;border-radius:50%;background:var(--am-teal-bright); box-shadow:0 0 0 4px rgba(52,146,142,.22); }
+  .v1-hero .cta { display:flex; gap:14px; margin-top: 34px; flex-wrap: wrap; }
+  .v1-hero .checks { display:flex; gap:26px; margin-top: 34px; flex-wrap: wrap; }
+  .v1-hero .checks span { display:inline-flex; align-items:center; gap:9px; font-size:14.5px; color:#C5CAD4; }
+  .v1-hero .checks i { color: var(--am-teal-bright); font-size:18px; }
+
+  /* hero viz */
+  .viz { position: relative; aspect-ratio: 1.12/1; width: 100%; max-width: 520px; margin-left: auto; }
+  .viz svg.lines { position:absolute; inset:0; width:100%; height:100%; overflow: visible; }
+  .viz .node {
+    position:absolute; width:58px; height:58px; border-radius:15px;
+    background: linear-gradient(180deg,#222C3A,#1A2230); border:1px solid rgba(255,255,255,.10);
+    display:flex; align-items:center; justify-content:center; color:#9FD4D0; font-size:24px;
+    box-shadow: 0 10px 24px rgba(0,0,0,.45); transform: translate(-50%,-50%);
+  }
+  .viz .node.terra { color: var(--am-terra-bright); }
+  .viz .node small { position:absolute; top:64px; left:50%; transform:translateX(-50%); white-space:nowrap; font-size:11.5px; color:#8A92A0; font-family:var(--font-mono); }
+  .viz .core {
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:190px; height:170px; display:flex; align-items:center; justify-content:center;
+  }
+  .viz .core::before { content:""; position:absolute; width:240px; height:240px; border-radius:50%;
+    background: radial-gradient(circle, rgba(52,146,142,.40), transparent 62%); filter: blur(8px); }
+  .viz .core svg { position: relative; filter: drop-shadow(0 16px 30px rgba(0,0,0,.5)); }
+
+  /* trust strip */
+  .v1-trust { background: var(--am-graphite-700); border-top:1px solid rgba(255,255,255,.06); }
+  .v1-trust .am-wrap { display:flex; align-items:center; gap:34px; flex-wrap:wrap; padding:22px 32px; }
+  .v1-trust .lbl { font-family:var(--font-mono); font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:#7C8492; }
+  .v1-trust .item { display:inline-flex; align-items:center; gap:9px; color:#C2C7D1; font-size:14.5px; font-weight:500; }
+  .v1-trust .item i { color:#8FB7B4; font-size:18px; }
+
+  /* features */
+  .feat-grid { display:grid; grid-template-columns: repeat(3,1fr); gap:18px; margin-top:48px; }
+  .feat .ic { width:46px;height:46px;border-radius:12px; background:var(--am-teal-tint); color:var(--am-teal); display:flex;align-items:center;justify-content:center; font-size:24px; margin-bottom:18px; }
+  .feat h3 { font-size:19px; }
+  .feat p { color:var(--fg-3); font-size:15.5px; margin-top:9px; }
+
+  /* deployment */
+  .deploy { background: var(--surface); border-top:1px solid var(--border); }
+  .prof-grid { display:grid; grid-template-columns: repeat(3,1fr); gap:18px; margin-top:42px; }
+  .prof { position:relative; }
+  .prof.rec { border-color: var(--am-teal); box-shadow: 0 0 0 1px var(--am-teal); }
+  .prof .tag { position:absolute; top:-11px; left:24px; }
+  .prof .ph { display:flex; align-items:center; gap:12px; }
+  .prof .ph .ic { width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;background:var(--am-cream-100);color:var(--am-graphite); }
+  .prof h3 { font-size:20px; }
+  .prof .specs { list-style:none; padding:0; margin:20px 0 0; display:flex; flex-direction:column; gap:11px; }
+  .prof .specs li { display:flex; align-items:center; gap:10px; font-size:14.5px; color:var(--fg-2); }
+  .prof .specs li .mono { font-size:13px; color:var(--fg); }
+  .prof .specs li i { color:var(--am-teal); font-size:17px; }
+  .prof .price { margin-top:22px; padding-top:18px; border-top:1px dashed var(--border-strong); font-size:14px; color:var(--fg-3); }
+  .prof .price b { font-family:var(--font-head); font-size:22px; color:var(--fg); }
+
+  /* residency */
+  .resid { background: var(--am-cream-50); border-top:1px solid var(--border); }
+  .resid-grid { display:grid; grid-template-columns: 1fr 1fr; gap:48px; align-items:center; }
+  .geo { display:flex; flex-direction:column; gap:14px; }
+  .geo .row { display:flex; align-items:center; gap:14px; padding:14px 16px; background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); }
+  .geo .row i { font-size:20px; color:var(--am-teal); }
+  .geo .row b { font-size:15.5px; }
+  .geo .row small { color:var(--fg-3); font-size:13px; display:block; }
+  .geo .row .mono { margin-left:auto; font-size:12px; color:var(--am-slate); }
+
+  /* stats band */
+  .band { background: var(--am-graphite); color:#E6E6EC; }
+  .band .am-wrap { display:grid; grid-template-columns: 1.3fr 2fr; gap:48px; align-items:center; padding:64px 32px; }
+  .band .q { font-family:var(--font-head); font-size:22px; line-height:1.4; color:#F1F0EB; font-weight:600; }
+  .band .q .mk { font-size:40px; color:var(--am-teal-bright); line-height:0; }
+  .band .who { margin-top:16px; font-size:14px; color:#9098A6; font-family:var(--font-mono); }
+  .stats { display:grid; grid-template-columns: repeat(4,1fr); gap:22px; }
+  .stat .n { font-family:var(--font-head); font-size:38px; font-weight:800; color:#F4F3EE; letter-spacing:-.02em; }
+  .stat .n.teal { color: var(--am-teal-bright); }
+  .stat p { font-size:13.5px; color:#9CA3B0; margin-top:6px; }
+
+  /* pricing */
+  .pricing { background: var(--surface); border-top:1px solid var(--border); }
+  .plan-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:18px; margin-top:42px; }
+  .plan { position:relative; display:flex; flex-direction:column; text-align:left; }
+  .plan.rec { border-color:var(--am-teal); box-shadow:0 0 0 1px var(--am-teal); }
+  .plan-tag { position:absolute; top:-11px; left:24px; }
+  .plan-h { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding-bottom:18px; border-bottom:1px solid var(--border); }
+  .plan-h h3 { font-size:22px; }
+  .plan-h p { color:var(--fg-3); font-size:13.5px; margin-top:4px; }
+  .plan-amt { font-family:var(--font-head); font-weight:800; font-size:30px; letter-spacing:-.02em; white-space:nowrap; }
+  .plan-amt span { font-size:15px; color:var(--fg-3); font-weight:600; }
+  .plan-feats { list-style:none; padding:0; margin:18px 0 22px; display:flex; flex-direction:column; gap:11px; flex:1; }
+  .plan-feats li { display:flex; gap:10px; align-items:flex-start; font-size:14.5px; color:var(--fg-2); }
+  .plan-feats li i { color:var(--am-teal); margin-top:2px; }
+  .compare { margin-top:18px; background:var(--am-cream-50); border:1px solid var(--border); border-radius:var(--r-lg); padding:26px 28px; }
+  .compare-h { display:flex; align-items:baseline; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:18px; }
+  .compare-h b { font-family:var(--font-head); font-size:17px; }
+  .compare-h span { font-size:12.5px; color:var(--am-slate); font-family:var(--font-mono); }
+  .cbar { display:flex; align-items:center; gap:16px; margin-bottom:11px; }
+  .cbar .cl { width:210px; font-size:13.5px; color:var(--fg-2); flex:none; }
+  .ctrack { flex:1; background:var(--am-stone-soft); border-radius:8px; height:34px; }
+  .cfill { height:100%; display:flex; align-items:center; justify-content:flex-end; padding:0 12px; color:#fff; font-family:var(--font-head); font-weight:700; font-size:14px; border-radius:8px; min-width:56px; }
+  .cfill.teal { background:var(--am-teal); }
+  .cfill.stone { background:var(--am-slate-2); }
+  .cfill.graph { background:var(--am-graphite); }
+  .cnote { margin-top:14px; font-size:13.5px; color:var(--fg-3); }
+  .price-card { max-width:560px; margin:42px auto 0; text-align:center; border:1px solid var(--am-teal); box-shadow: var(--sh-md); position:relative; }
+  .price-card .amt { font-family:var(--font-head); font-weight:800; font-size:58px; color:var(--fg); letter-spacing:-.02em; }
+  .price-card .amt span { font-size:22px; color:var(--fg-3); font-weight:600; }
+  .price-card .feats { list-style:none; padding:0; margin:26px 0; display:grid; grid-template-columns:1fr 1fr; gap:13px; text-align:left; }
+  .price-card .feats li { display:flex; align-items:center; gap:10px; font-size:14.5px; color:var(--fg-2); }
+  .price-card .feats li i { color:var(--am-teal); }
+
+  /* CTA + footer */
+  .cta-final { background: var(--am-cream); border-top:1px solid var(--border); text-align:center; }
+  .cta-final h2 { font-size: clamp(30px,4vw,46px); }
+  .cta-final p { color:var(--fg-3); font-size:18px; margin:16px auto 30px; max-width:560px; }
+  footer.am-footer .am-wrap { display:grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap:32px; padding:62px 32px 30px; }
+  footer.am-footer h4 { color:#fff; font-size:13px; text-transform:uppercase; letter-spacing:.1em; font-family:var(--font-ui); font-weight:600; margin-bottom:16px; }
+  footer.am-footer a { display:block; color:#A7ACB6; font-size:14.5px; margin-bottom:11px; }
+  footer.am-footer a:hover { color:#fff; }
+  footer .foot-bottom { border-top:1px solid rgba(255,255,255,.08); }
+  footer .foot-bottom .am-wrap { display:flex; align-items:center; justify-content:space-between; padding:22px 32px; grid-template-columns:none; }
+  footer .foot-bottom span { color:#7E848F; font-size:13px; }
+
+  .sec-title { text-align:center; max-width:680px; margin:0 auto; }
+  .sec-title .eyebrow { display:block; margin-bottom:14px; }
+  .sec-title h2 { font-size: clamp(30px,4vw,44px); }
+  .sec-title p { color:var(--fg-3); font-size:18px; margin-top:16px; }
+  .underline { position:relative; }
+  .underline::after { content:""; position:absolute; left:0; right:0; bottom:-6px; height:4px; border-radius:2px; background:var(--am-terra); opacity:.85; }
+
+  @media (max-width: 940px) {
+    .v1-hero .am-wrap { grid-template-columns: 1fr; }
+    .viz { margin: 10px auto 0; }
+    .feat-grid, .prof-grid { grid-template-columns: 1fr; }
+    .resid-grid { grid-template-columns: 1fr; gap:28px; }
+    .band .am-wrap { grid-template-columns: 1fr; gap:32px; }
+    .stats { grid-template-columns: repeat(2,1fr); }
+    .v1-nav nav { display:none; }
+    footer.am-footer .am-wrap { grid-template-columns: 1fr 1fr; }
+    .price-card .feats { grid-template-columns: 1fr; }
+    .plan-grid { grid-template-columns: 1fr; }
+    .cbar .cl { width: 132px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<header class="v1-nav">
+  <div class="am-wrap">
+    <span class="am-logo on-dark" data-am-logo="dark" data-icon-w="34"></span>
+    <nav>
+      <a href="#feat">Возможности</a>
+      <a href="#arch">Архитектура</a>
+      <a href="#deploy">Развёртывание</a>
+      <a href="#resid">Интеграции</a>
+      <a href="#price">Цены</a>
+    </nav>
+    <div class="spacer"></div>
+    <a class="gh" href="#" aria-label="GitHub"><i class="ph ph-github-logo"></i></a>
+    <a class="btn btn-primary btn-sm" href="#">Начать развёртывание</a>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="v1-hero">
+  <div class="am-wrap">
+    <div>
+      <span class="pill"><span class="dot"></span> Локально. Безопасно. В вашем контуре.</span>
+      <h1>Единая память<br>для ваших <span class="accent">ИИ-агентов</span></h1>
+      <p class="lede">ArtelMemory сохраняет общий контекст проектов, решений и задач между Claude Code, Codex, Kimi, GLM и любым клиентом с MCP. Разворачивайте бесплатно в своей инфраструктуре с локальной моделью — или подключайте наше управляемое облако.</p>
+      <div class="cta">
+        <a class="btn btn-primary btn-lg" href="#">Начать развёртывание <i class="ph ph-arrow-right"></i></a>
+        <a class="btn btn-onDark btn-lg" href="#arch">Посмотреть архитектуру</a>
+      </div>
+      <div class="checks">
+        <span><i class="ph-bold ph-check-circle"></i> Self-hosted — бесплатно</span>
+        <span><i class="ph-bold ph-check-circle"></i> Локальная модель, без передачи данных</span>
+        <span><i class="ph-bold ph-check-circle"></i> Или облако за $5</span>
+      </div>
+    </div>
+
+    <!-- HERO VIZ -->
+    <div class="viz" id="heroViz">
+      <svg class="lines" viewBox="0 0 520 470" preserveAspectRatio="none" aria-hidden="true">
+        <g stroke="rgba(52,146,142,.45)" stroke-width="1.6" fill="none">
+          <path d="M260 235 L96 92"/>
+          <path d="M260 235 L430 84"/>
+          <path d="M260 235 L52 235"/>
+          <path d="M260 235 L470 232"/>
+          <path d="M260 235 L120 400"/>
+          <path d="M260 235 L408 400"/>
+        </g>
+        <g fill="#C96A4A">
+          <circle cx="178" cy="163" r="3.2"/><circle cx="345" cy="159" r="3.2"/>
+          <circle cx="156" cy="235" r="3.2"/><circle cx="365" cy="233" r="3.2"/>
+          <circle cx="190" cy="317" r="3.2"/><circle cx="334" cy="317" r="3.2"/>
+        </g>
+      </svg>
+      <div class="core"><svg width="150" height="125" viewBox="0 0 72 60" data-am-icon="onDark"></svg></div>
+      <div class="node" style="left:18%;top:19%"><i class="ph ph-file-code"></i><small>Claude Code</small></div>
+      <div class="node" style="left:83%;top:18%"><i class="ph ph-terminal-window"></i><small>Codex</small></div>
+      <div class="node" style="left:10%;top:50%"><i class="ph ph-robot"></i><small>Kimi</small></div>
+      <div class="node terra" style="left:90%;top:49%"><i class="ph ph-brain"></i><small>GLM</small></div>
+      <div class="node" style="left:23%;top:85%"><i class="ph ph-code"></i><small>OpenClaw</small></div>
+      <div class="node" style="left:78%;top:85%"><i class="ph ph-feather"></i><small>Hermes</small></div>
+    </div>
+  </div>
+</section>
+
+<!-- TRUST -->
+<div class="v1-trust">
+  <div class="am-wrap">
+    <span class="lbl">Локальный стек</span>
+    <span class="item"><i class="ph ph-cube"></i> Qdrant</span>
+    <span class="item"><i class="ph ph-database"></i> SQLite</span>
+    <span class="item"><i class="ph ph-cpu"></i> Локальная модель</span>
+    <span class="item"><i class="ph ph-plugs-connected"></i> MCP</span>
+    <span class="item"><i class="ph ph-shield-check"></i> Self-hosted</span>
+    <span class="item"><i class="ph ph-lock-key"></i> Local-only</span>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section class="section" id="feat">
+  <div class="am-wrap">
+    <div class="sec-title">
+      <span class="eyebrow">Возможности</span>
+      <h2>Всё, что нужно <span class="underline">вашей команде</span></h2>
+      <p>Память как инфраструктура: общий контекст, семантический поиск и локальные модели — внутри вашего контура.</p>
+    </div>
+    <div class="feat-grid">
+      <div class="card hoverable feat"><div class="ic"><i class="ph ph-shield-check"></i></div><h3>Данные под контролем</h3><p>Полный контроль над данными. Никаких сторонних облаков — контур остаётся вашим.</p></div>
+      <div class="card hoverable feat"><div class="ic"><i class="ph ph-hard-drives"></i></div><h3>Локальный хостинг</h3><p>Разворачивайте в РФ, Кыргызстане, Казахстане или в собственном дата-центре.</p></div>
+      <div class="card hoverable feat"><div class="ic"><i class="ph ph-magnifying-glass"></i></div><h3>Семантический поиск</h3><p>Qdrant и локальная embedding-модель с поддержкой RU-контекста — без передачи документов наружу.</p></div>
+      <div class="card hoverable feat"><div class="ic"><i class="ph ph-users-three"></i></div><h3>Общая память команды</h3><p>Агенты, люди и инструменты работают в едином контексте проекта.</p></div>
+      <div class="card hoverable feat"><div class="ic"><i class="ph ph-plugs-connected"></i></div><h3>Любой клиент с MCP</h3><p>Claude Code, Codex, Kimi, GLM, OpenClaw, Hermes — и любой агент, говорящий по MCP.</p></div>
+      <div class="card hoverable feat"><div class="ic"><i class="ph ph-chart-line-up"></i></div><h3>Масштабируемость</h3><p>От одного агента до enterprise-контура без ограничений.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ARCHITECTURE strip -->
+<section class="section-tight" id="arch" style="background:var(--am-cream-50);border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+  <div class="am-wrap">
+    <div class="sec-title"><span class="eyebrow">Архитектура</span><h2>Как устроен поток памяти</h2></div>
+    <div style="display:flex;align-items:stretch;gap:14px;margin-top:38px;flex-wrap:wrap;justify-content:center">
+      <div class="card" style="flex:1;min-width:150px;text-align:center"><i class="ph ph-robot" style="font-size:30px;color:var(--am-graphite)"></i><h3 style="font-size:16px;margin-top:10px">ИИ-агенты</h3><p style="font-size:13px;color:var(--fg-3);margin-top:4px">Claude Code, Codex, Kimi, GLM…</p></div>
+      <div style="display:flex;align-items:center;color:var(--am-terra);font-size:22px">→</div>
+      <div class="card" style="flex:1;min-width:150px;text-align:center;border-color:var(--am-teal)"><i class="ph ph-plugs-connected" style="font-size:30px;color:var(--am-teal)"></i><h3 style="font-size:16px;margin-top:10px">ArtelMemory API</h3><p style="font-size:13px;color:var(--fg-3);margin-top:4px">Чтение и запись памяти</p></div>
+      <div style="display:flex;align-items:center;color:var(--am-terra);font-size:22px">→</div>
+      <div class="card" style="flex:1.3;min-width:170px;text-align:center"><i class="ph ph-stack" style="font-size:30px;color:var(--am-graphite)"></i><h3 style="font-size:16px;margin-top:10px">Memory pipeline</h3><p style="font-size:13px;color:var(--fg-3);margin-top:4px">SQLite метаданные · Qdrant векторы · локальная модель</p></div>
+      <div style="display:flex;align-items:center;color:var(--am-terra);font-size:22px">→</div>
+      <div class="card" style="flex:1;min-width:150px;text-align:center"><i class="ph ph-arrow-u-up-left" style="font-size:30px;color:var(--am-graphite)"></i><h3 style="font-size:16px;margin-top:10px">Контекст</h3><p style="font-size:13px;color:var(--fg-3);margin-top:4px">Релевантная память — обратно агентам</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- DEPLOYMENT -->
+<section class="section deploy" id="deploy">
+  <div class="am-wrap">
+    <div class="sec-title"><span class="eyebrow">Развёртывание</span><h2>Развёртывание в вашем контуре</h2><p>От лёгкого старта до enterprise-инфраструктуры.</p></div>
+    <div class="prof-grid">
+      <div class="card prof">
+        <div class="ph"><div class="ic"><i class="ph ph-house"></i></div><div><h3>Для старта</h3></div></div>
+        <ul class="specs">
+          <li><i class="ph ph-cpu"></i> <span class="mono">2 vCPU / 8 GB RAM</span></li>
+          <li><i class="ph ph-database"></i> SQLite + Qdrant</li>
+          <li><i class="ph ph-cpu"></i> Локальные embeddings</li>
+        </ul>
+        <div class="price">Идеально для команд и пилотов</div>
+      </div>
+      <div class="card prof rec">
+        <span class="tag"><span class="badge badge-teal">Рекомендуемый профиль</span></span>
+        <div class="ph"><div class="ic"><i class="ph ph-hard-drives"></i></div><div><h3>Production</h3></div></div>
+        <ul class="specs">
+          <li><i class="ph ph-cpu"></i> <span class="mono">4–8 vCPU / 16 GB RAM</span></li>
+          <li><i class="ph ph-database"></i> PostgreSQL + Qdrant</li>
+          <li><i class="ph ph-cpu"></i> Локальные embeddings</li>
+        </ul>
+        <div class="price">Рекомендуемый профиль</div>
+      </div>
+      <div class="card prof">
+        <div class="ph"><div class="ic"><i class="ph ph-buildings"></i></div><div><h3>Enterprise</h3></div></div>
+        <ul class="specs">
+          <li><i class="ph ph-cpu"></i> <span class="mono">8+ vCPU / 32+ GB RAM</span></li>
+          <li><i class="ph ph-stack"></i> Qdrant Cluster</li>
+          <li><i class="ph ph-shield-check"></i> Полный контроль и SLA</li>
+        </ul>
+        <div class="price">Для крупных организаций</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- RESIDENCY -->
+<section class="section resid" id="resid">
+  <div class="am-wrap">
+    <div class="resid-grid">
+      <div>
+        <span class="eyebrow">Данные остаются в вашем контуре</span>
+        <h2 style="font-size:clamp(28px,3.6vw,40px);margin-top:14px">Резидентность данных<br>для CIS-рынков</h2>
+        <p style="color:var(--fg-3);font-size:17px;margin-top:16px;max-width:480px">Разворачивайте в нужной юрисдикции и включайте local-only режим. Профили развёртывания помогают согласовать архитектуру с локальными требованиями к данным.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:24px">
+          <span class="chip"><span class="dot ok"></span> Local-only режим</span>
+          <span class="chip"><span class="dot terra"></span> Локальная модель</span>
+          <span class="chip"><span class="dot"></span> Ollama / vLLM</span>
+        </div>
+      </div>
+      <div class="geo">
+        <div class="row"><i class="ph ph-map-pin"></i><div><b>Россия</b><small>Данные хранятся в РФ</small></div><span class="mono">on-prem</span></div>
+        <div class="row"><i class="ph ph-map-pin"></i><div><b>Кыргызстан</b><small>Хостинг в КР</small></div><span class="mono">on-prem</span></div>
+        <div class="row"><i class="ph ph-map-pin"></i><div><b>Казахстан</b><small>Хостинг в РК</small></div><span class="mono">on-prem</span></div>
+        <div class="row"><i class="ph ph-map-pin"></i><div><b>Узбекистан · Таджикистан</b><small>Хостинг в РУз / РТ</small></div><span class="mono">on-prem</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STATS BAND -->
+<section class="band">
+  <div class="am-wrap">
+    <div>
+      <span class="eyebrow" style="color:var(--am-teal-bright)">Почему ArtelMemory</span>
+      <div class="q" style="margin-top:14px">Память остаётся в вашем контуре — локально, быстро и под вашим контролем.</div>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="n teal">100%</div><p>данные остаются в вашем контуре</p></div>
+      <div class="stat"><div class="n">∞</div><p>неограниченное число агентов</p></div>
+      <div class="stat"><div class="n teal">&lt;50ms</div><p>быстрый поиск в контексте</p></div>
+      <div class="stat"><div class="n">Free</div><p>self-hosted из коробки</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="section pricing" id="price">
+  <div class="am-wrap">
+    <div class="sec-title"><span class="eyebrow">Цены</span><h2>Бесплатно у себя. Или $5 в облаке.</h2><p>Разворачивайте ArtelMemory self-hosted бесплатно — или возьмите управляемое облако, чтобы не настраивать инфраструктуру самим.</p></div>
+    <div class="plan-grid">
+      <div class="card plan">
+        <div class="plan-h">
+          <div><h3>Self-hosted</h3><p>Open-source · ваш контур</p></div>
+          <div class="plan-amt">Бесплатно</div>
+        </div>
+        <ul class="plan-feats">
+          <li><i class="ph-bold ph-check"></i> Полный продукт, без лимитов по памяти и агентам</li>
+          <li><i class="ph-bold ph-check"></i> Локальная модель и семантический поиск Qdrant</li>
+          <li><i class="ph-bold ph-check"></i> SQLite из коробки, PostgreSQL для production</li>
+          <li><i class="ph-bold ph-check"></i> Вы платите только за свою инфраструктуру</li>
+        </ul>
+        <a class="btn btn-secondary btn-lg" href="#" style="width:100%"><i class="ph ph-book-open"></i> Инструкция по установке</a>
+      </div>
+      <div class="card plan rec">
+        <span class="badge badge-teal plan-tag">Рекомендуем · без настройки</span>
+        <div class="plan-h">
+          <div><h3>ArtelMemory Cloud</h3><p>Управляемый хостинг в РФ и СНГ</p></div>
+          <div class="plan-amt">$5<span> / мес</span></div>
+        </div>
+        <ul class="plan-feats">
+          <li><i class="ph-bold ph-check"></i> Поднимаем за вас — ничего настраивать не нужно</li>
+          <li><i class="ph-bold ph-check"></i> TLS, обновления и резервные копии включены</li>
+          <li><i class="ph-bold ph-check"></i> Та же память и API, что и в self-hosted</li>
+          <li><i class="ph-bold ph-check"></i> Дешевле, чем держать инфраструктуру самим</li>
+        </ul>
+        <a class="btn btn-primary btn-lg" href="#" style="width:100%">Попробовать облако <i class="ph ph-arrow-right"></i></a>
+      </div>
+    </div>
+    <div class="compare">
+      <div class="compare-h"><b>Во сколько обходится память для агентов</b><span>ориентировочно · уточняется</span></div>
+      <div class="cbar"><span class="cl">ArtelMemory Cloud</span><div class="ctrack"><div class="cfill teal" style="width:13%">$5</div></div></div>
+      <div class="cbar"><span class="cl">Self-hosted в другом месте</span><div class="ctrack"><div class="cfill stone" style="width:26%">~$10</div></div></div>
+      <div class="cbar"><span class="cl">Облачные альтернативы</span><div class="ctrack"><div class="cfill graph" style="width:100%">$40+</div></div></div>
+      <p class="cnote">Наше облако обходится в несколько раз дешевле — включая TLS, обновления и поддержку. Точные тарифы альтернатив сверим позже; цифры выше — рабочая оценка.</p>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="section cta-final">
+  <div class="am-wrap">
+    <h2>Ваши агенты делятся контекстом.<br>Ваши данные — под вашим контролем.</h2>
+    <p>Разверните ArtelMemory одной командой Docker Compose и подключите первого агента за минуты.</p>
+    <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
+      <a class="btn btn-primary btn-lg" href="#">Начать развёртывание <i class="ph ph-arrow-right"></i></a>
+      <a class="btn btn-secondary btn-lg" href="#"><i class="ph ph-github-logo"></i> Открыть на GitHub</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="am-footer">
+  <div class="am-wrap">
+    <div>
+      <span class="am-logo on-dark" data-am-logo="dark"></span>
+      <p style="color:#9098A6;font-size:14.5px;margin-top:16px;max-width:280px">Единая память для ваших ИИ-агентов. Self-hosted инфраструктура для CIS-команд.</p>
+    </div>
+    <div><h4>Продукт</h4><a href="#feat">Возможности</a><a href="#arch">Архитектура</a><a href="#deploy">Развёртывание</a><a href="#price">Цены</a></div>
+    <div><h4>Ресурсы</h4><a href="#">Документация</a><a href="#">API-референс</a><a href="#">GitHub</a><a href="#">Changelog</a></div>
+    <div><h4>Контур</h4><a href="#">РФ и СНГ</a><a href="#">Local-only режим</a><a href="#">Безопасность</a><a href="#">Контакты</a></div>
+  </div>
+  <div class="foot-bottom">
+    <div class="am-wrap">
+      <span>© 2026 ArtelMemory. Сделано для CIS.</span>
+      <span>Память остаётся в вашем контуре.</span>
+    </div>
+  </div>
+</footer>
+
+<script src="../am-logo.js"></script>
+</body>
+</html>

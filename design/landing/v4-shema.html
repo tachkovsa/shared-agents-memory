@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ArtelMemory — Схема (V4)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/bold/style.css">
+<link rel="stylesheet" href="../brand.css">
+<style>
+  /* ---------- V4 Схема : blueprint / diagram-led ---------- */
+  body { background:var(--am-cream-50); }
+  .v4-nav { position:sticky; top:0; z-index:50; background:rgba(251,248,242,.86); backdrop-filter:blur(12px); border-bottom:1px solid var(--border); }
+  .v4-nav .am-wrap { display:flex; align-items:center; gap:34px; height:74px; }
+  .v4-nav nav { display:flex; gap:28px; margin-left:6px; }
+  .v4-nav nav a { font-size:15px; color:var(--fg-2); font-weight:500; }
+  .v4-nav nav a:hover { color:var(--am-teal); }
+  .v4-nav .spacer { flex:1; }
+
+  .v4-hero { padding:60px 0 20px; text-align:center; position:relative; }
+  .v4-hero .eyebrow { display:inline-block; margin-bottom:16px; }
+  .v4-hero h1 { font-size:clamp(36px,5vw,58px); font-weight:800; letter-spacing:-.02em; line-height:1.05; max-width:18ch; margin:0 auto; }
+  .v4-hero h1 .t { color:var(--am-teal); }
+  .v4-hero .lede { max-width:600px; margin:20px auto 0; color:var(--fg-2); font-size:18px; line-height:1.6; }
+  .v4-hero .cta { display:flex; gap:13px; justify-content:center; margin-top:28px; flex-wrap:wrap; }
+
+  /* blueprint diagram */
+  .blueprint { margin:36px auto 0; max-width:1240px; padding:0 24px; }
+  .bpcard { background:
+      linear-gradient(0deg, rgba(43,125,122,.025), rgba(43,125,122,.025)),
+      var(--am-graphite);
+    border:1px solid var(--border-strong); border-radius:20px; padding:8px;
+    box-shadow: var(--sh-lg); position:relative; overflow:hidden; }
+  .bpcard .grid-bg { position:absolute; inset:0; opacity:.5;
+    background-image:
+      linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+    background-size: 26px 26px; pointer-events:none; }
+  .bpcard svg { display:block; width:100%; height:auto; position:relative; }
+  .bp-legend { display:flex; gap:22px; justify-content:center; flex-wrap:wrap; margin-top:18px; }
+  .bp-legend span { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--fg-3); font-family:var(--font-mono); }
+  .bp-legend i.dt { width:9px;height:9px;border-radius:50%; }
+
+  /* node label text inside svg */
+  .nlabel { font-family:'Inter',sans-serif; font-weight:600; font-size:15px; fill:#F2F1EC; }
+  .nsub { font-family:'JetBrains Mono',monospace; font-size:11px; fill:#8B93A0; }
+  .stagecap { font-family:'JetBrains Mono',monospace; font-size:11px; fill:#6E7682; letter-spacing:.1em; text-transform:uppercase; }
+  .flowline { fill:none; stroke:rgba(52,146,142,.45); stroke-width:2; }
+  .flowdash { fill:none; stroke:var(--am-teal-bright); stroke-width:2; stroke-dasharray:7 9; animation:dash 1.1s linear infinite; }
+  @keyframes dash { to { stroke-dashoffset:-32; } }
+  .retline { fill:none; stroke:rgba(201,106,74,.5); stroke-width:2; stroke-dasharray:3 7; }
+  @media (prefers-reduced-motion: reduce){ .flowdash{ animation:none; } .pulse{ display:none; } }
+
+  /* stages section */
+  .stages { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:54px; }
+  .stage { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:22px; }
+  .stage .n { font-family:var(--font-mono); font-size:12px; color:var(--am-terra); }
+  .stage h3 { font-size:17px; margin-top:6px; }
+  .stage p { color:var(--fg-3); font-size:14px; margin-top:8px; }
+
+  .feat4 { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:44px; }
+  .fc { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:24px; }
+  .fc .ic { width:44px;height:44px;border-radius:11px;background:var(--am-teal-tint);color:var(--am-teal);display:flex;align-items:center;justify-content:center;font-size:23px;margin-bottom:15px; }
+  .fc h3 { font-size:18px; } .fc p { color:var(--fg-3); font-size:14.5px; margin-top:8px; }
+
+  .v4-deploy { background:var(--surface); border-top:1px solid var(--border); }
+  .pgrid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:40px; }
+  .pcard { border:1px solid var(--border); border-radius:14px; padding:24px; }
+  .pcard.rec { border-color:var(--am-teal); box-shadow:0 0 0 1px var(--am-teal); }
+  .pcard h3 { font-size:19px; } .pcard .ic{width:40px;height:40px;border-radius:10px;background:var(--am-cream-100);display:flex;align-items:center;justify-content:center;font-size:21px;margin-bottom:14px;color:var(--am-graphite);}
+  .pcard ul { list-style:none;padding:0;margin:14px 0 0;display:flex;flex-direction:column;gap:9px; }
+  .pcard ul li{font-size:14px;color:var(--fg-2);display:flex;gap:9px;align-items:center;} .pcard ul li i{color:var(--am-teal);} .pcard ul li .mono{font-size:12.5px;white-space:nowrap;}
+
+  .v4-price { border-top:1px solid var(--border); }
+  .pc { max-width:520px;margin:38px auto 0;text-align:center;border:2px solid var(--am-teal);border-radius:18px;padding:36px;background:var(--surface); }
+  .pc .amt{font-family:var(--font-head);font-size:60px;font-weight:800;letter-spacing:-.02em;} .pc .amt span{font-size:19px;color:var(--fg-3);font-weight:600;}
+  .pc ul{list-style:none;padding:0;margin:22px 0;text-align:left;display:grid;grid-template-columns:1fr 1fr;gap:11px;} .pc ul li{display:flex;gap:9px;align-items:center;font-size:14.5px;color:var(--fg-2);} .pc ul li i{color:var(--am-teal);}
+
+  .sec-title{text-align:center;max-width:680px;margin:0 auto;} .sec-title .eyebrow{display:block;margin-bottom:12px;} .sec-title h2{font-size:clamp(28px,3.8vw,42px);} .sec-title p{color:var(--fg-3);font-size:17px;margin-top:14px;}
+  .cta-final{text-align:center;background:var(--am-cream);border-top:1px solid var(--border);} .cta-final h2{font-size:clamp(30px,4vw,46px);} .cta-final p{color:var(--fg-3);font-size:18px;margin:16px auto 30px;max-width:560px;}
+  footer.am-footer .am-wrap{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px;padding:58px 32px 26px;} footer.am-footer h4{color:#fff;font-size:13px;text-transform:uppercase;letter-spacing:.1em;font-weight:600;margin-bottom:15px;} footer.am-footer a{display:block;color:#A7ACB6;font-size:14.5px;margin-bottom:11px;} footer.am-footer a:hover{color:#fff;}
+  footer .foot-bottom{border-top:1px solid rgba(255,255,255,.08);} footer .foot-bottom .am-wrap{display:flex;justify-content:space-between;padding:22px 32px;} footer .foot-bottom span{color:#7E848F;font-size:13px;}
+
+  @media (max-width:900px){ .v4-nav nav{display:none;} .stages{grid-template-columns:1fr 1fr;} .feat4,.pgrid{grid-template-columns:1fr;} .pc ul{grid-template-columns:1fr;} footer.am-footer .am-wrap{grid-template-columns:1fr 1fr;} }
+</style>
+</head>
+<body>
+
+<header class="v4-nav">
+  <div class="am-wrap">
+    <span class="am-logo" data-am-logo></span>
+    <nav><a href="#how">Схема</a><a href="#stages">Этапы</a><a href="#deploy">Развёртывание</a><a href="#price">Цены</a><a href="#">Документация</a></nav>
+    <div class="spacer"></div>
+    <a class="btn btn-ghost btn-sm" href="#"><i class="ph ph-github-logo"></i> GitHub</a>
+    <a class="btn btn-primary btn-sm" href="#">Начать</a>
+  </div>
+</header>
+
+<section class="v4-hero" id="how">
+  <div class="am-wrap">
+    <span class="eyebrow">Архитектура памяти</span>
+    <h1>Один контур памяти<br>для всех ваших <span class="t">агентов</span></h1>
+    <p class="lede">Агенты пишут и читают общий контекст через единый API. Память дедуплицируется, ранжируется и хранится локально — в Qdrant и SQLite.</p>
+    <div class="cta">
+      <a class="btn btn-primary btn-lg" href="#">Начать развёртывание <i class="ph ph-arrow-right"></i></a>
+      <a class="btn btn-secondary btn-lg" href="#stages">Разобрать схему</a>
+    </div>
+  </div>
+
+  <div class="blueprint">
+    <div class="bpcard">
+      <div class="grid-bg"></div>
+      <svg viewBox="0 0 1200 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Схема потока памяти ArtelMemory">
+        <defs>
+          <marker id="ah" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="rgba(52,146,142,.7)"/></marker>
+        </defs>
+
+        <!-- stage captions -->
+        <text class="stagecap" x="120" y="44" text-anchor="middle">AI-агенты</text>
+        <text class="stagecap" x="420" y="44" text-anchor="middle">API</text>
+        <text class="stagecap" x="690" y="44" text-anchor="middle">Pipeline</text>
+        <text class="stagecap" x="1010" y="44" text-anchor="middle">Storage</text>
+
+        <!-- flow lines agents -> api -->
+        <path class="flowline" d="M232 110 C300 110 300 200 348 200"/>
+        <path class="flowline" d="M232 200 H348"/>
+        <path class="flowline" d="M232 290 C300 290 300 200 348 200"/>
+        <path class="flowdash" d="M232 200 H348"/>
+        <!-- api -> pipeline -->
+        <path class="flowline" d="M492 200 H560" marker-end="url(#ah)"/>
+        <path class="flowdash" d="M492 200 H560"/>
+        <!-- pipeline -> storage -->
+        <path class="flowline" d="M820 200 H892" marker-end="url(#ah)"/>
+        <path class="flowdash" d="M820 200 H892"/>
+        <!-- storage return -> agents (context back) -->
+        <path class="retline" d="M1010 300 V404 H120 V330"/>
+        <text class="nsub" x="565" y="430" fill="#C96A4A">релевантный контекст — обратно агентам</text>
+
+        <!-- AGENT NODES -->
+        <g>
+          <rect x="40" y="86" width="192" height="48" rx="11" fill="#1B2330" stroke="rgba(255,255,255,.10)"/>
+          <circle cx="64" cy="110" r="13" fill="rgba(52,146,142,.18)"/><text x="64" y="115" text-anchor="middle" font-family="Phosphor" font-size="14" fill="#7FCFCA">&#xE2F4;</text>
+          <text class="nlabel" x="86" y="105">Claude Code</text><text class="nsub" x="86" y="121">mcp client</text>
+        </g>
+        <g>
+          <rect x="40" y="176" width="192" height="48" rx="11" fill="#1B2330" stroke="rgba(255,255,255,.10)"/>
+          <circle cx="64" cy="200" r="13" fill="rgba(52,146,142,.18)"/><text x="64" y="205" text-anchor="middle" font-family="Phosphor" font-size="14" fill="#7FCFCA">&#xE2F4;</text>
+          <text class="nlabel" x="86" y="195">Codex</text><text class="nsub" x="86" y="211">rest client</text>
+        </g>
+        <g>
+          <rect x="40" y="266" width="192" height="48" rx="11" fill="#1B2330" stroke="rgba(255,255,255,.10)"/>
+          <circle cx="64" cy="290" r="13" fill="rgba(52,146,142,.18)"/><text x="64" y="295" text-anchor="middle" font-family="Phosphor" font-size="14" fill="#7FCFCA">&#xE2F4;</text>
+          <text class="nlabel" x="86" y="285">OpenCode</text><text class="nsub" x="86" y="301">+ internal copilot</text>
+        </g>
+
+        <!-- API NODE -->
+        <rect x="348" y="160" width="144" height="80" rx="13" fill="#13313016" stroke="var(--am-teal)" />
+        <rect x="348" y="160" width="144" height="80" rx="13" fill="rgba(52,146,142,.10)" stroke="rgba(52,146,142,.8)"/>
+        <text class="nlabel" x="420" y="196" text-anchor="middle" fill="#9FE0DB">ArtelMemory</text>
+        <text class="nlabel" x="420" y="214" text-anchor="middle" fill="#9FE0DB">API</text>
+        <text class="nsub" x="420" y="230" text-anchor="middle">cookie + CSRF</text>
+
+        <!-- PIPELINE container -->
+        <rect x="560" y="120" width="260" height="160" rx="14" fill="rgba(255,255,255,.03)" stroke="rgba(255,255,255,.12)" stroke-dasharray="4 5"/>
+        <!-- memory core icon center -->
+        <g transform="translate(636,150) scale(1.5)"><svg width="0" height="0"></svg></g>
+        <g id="coreSlot"></g>
+        <g>
+          <rect x="582" y="200" width="100" height="34" rx="8" fill="#1B2330" stroke="rgba(255,255,255,.10)"/><text class="nsub" x="632" y="221" text-anchor="middle" fill="#C7CDD7">dedup</text>
+          <rect x="698" y="200" width="100" height="34" rx="8" fill="#1B2330" stroke="rgba(255,255,255,.10)"/><text class="nsub" x="748" y="221" text-anchor="middle" fill="#C7CDD7">decay</text>
+          <rect x="582" y="240" width="216" height="30" rx="8" fill="#1B2330" stroke="rgba(255,255,255,.10)"/><text class="nsub" x="690" y="259" text-anchor="middle" fill="#C7CDD7">staleness · lifecycle</text>
+        </g>
+
+        <!-- STORAGE -->
+        <g>
+          <rect x="892" y="150" width="236" height="46" rx="11" fill="#1B2330" stroke="rgba(255,255,255,.10)"/>
+          <circle cx="918" cy="173" r="13" fill="rgba(201,106,74,.18)"/><text x="918" y="178" text-anchor="middle" font-family="Phosphor" font-size="14" fill="#E08B6B">&#xE16C;</text>
+          <text class="nlabel" x="942" y="171">Qdrant</text><text class="nsub" x="942" y="186">векторы · payload-фильтры</text>
+        </g>
+        <g>
+          <rect x="892" y="204" width="236" height="46" rx="11" fill="#1B2330" stroke="rgba(255,255,255,.10)"/>
+          <circle cx="918" cy="227" r="13" fill="rgba(52,146,142,.18)"/><text x="918" y="232" text-anchor="middle" font-family="Phosphor" font-size="14" fill="#7FCFCA">&#xE16C;</text>
+          <text class="nlabel" x="942" y="225">SQLite</text><text class="nsub" x="942" y="240">метаданные · аудит</text>
+        </g>
+        <g>
+          <rect x="892" y="258" width="236" height="40" rx="11" fill="rgba(52,146,142,.08)" stroke="rgba(52,146,142,.35)"/>
+          <text class="nsub" x="1010" y="282" text-anchor="middle" fill="#9FE0DB">local embeddings · RU-контекст</text>
+        </g>
+
+        <!-- travelling pulses -->
+        <circle class="pulse" r="3.5" fill="#C96A4A"><animateMotion dur="2.2s" repeatCount="indefinite" path="M232 200 H348 V200"/></circle>
+        <circle class="pulse" r="3.5" fill="#C96A4A"><animateMotion dur="2.2s" begin="0.7s" repeatCount="indefinite" path="M492 200 H560"/></circle>
+        <circle class="pulse" r="3.5" fill="#C96A4A"><animateMotion dur="2.2s" begin="1.2s" repeatCount="indefinite" path="M820 200 H892"/></circle>
+      </svg>
+    </div>
+    <div class="bp-legend">
+      <span><i class="dt" style="background:var(--am-teal-bright)"></i> поток записи / чтения</span>
+      <span><i class="dt" style="background:var(--am-terra)"></i> возврат контекста</span>
+      <span><i class="dt" style="background:#8B93A0"></i> локально, в вашем контуре</span>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="stages">
+  <div class="am-wrap">
+    <div class="sec-title"><span class="eyebrow">Как читать схему</span><h2>Четыре этапа потока памяти</h2></div>
+    <div class="stages">
+      <div class="stage"><div class="n">01 · agents</div><h3>Агенты</h3><p>Claude Code, Codex, OpenCode и внутренние copilot-сервисы пишут и читают память.</p></div>
+      <div class="stage"><div class="n">02 · api</div><h3>ArtelMemory API</h3><p>Единый вход: cookie-сессия и CSRF на мутациях. MCP и REST.</p></div>
+      <div class="stage"><div class="n">03 · pipeline</div><h3>Pipeline</h3><p>Дедупликация, ранжирование (decay), staleness-аудит и lifecycle памяти.</p></div>
+      <div class="stage"><div class="n">04 · storage</div><h3>Storage</h3><p>Qdrant для векторов, SQLite для метаданных, локальные embeddings.</p></div>
+    </div>
+    <div class="feat4">
+      <div class="fc"><div class="ic"><i class="ph ph-shield-check"></i></div><h3>Данные под контролем</h3><p>Local-only режим: документы и embeddings не покидают ваш контур.</p></div>
+      <div class="fc"><div class="ic"><i class="ph ph-magnifying-glass"></i></div><h3>Семантический поиск</h3><p>Qdrant с payload-фильтрацией по namespace и RU-контекстом.</p></div>
+      <div class="fc"><div class="ic"><i class="ph ph-users-three"></i></div><h3>Общая память команды</h3><p>Агенты, люди и инструменты работают в едином контексте.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section v4-deploy" id="deploy">
+  <div class="am-wrap">
+    <div class="sec-title"><span class="eyebrow">Развёртывание</span><h2>Профили под вашу инфраструктуру</h2><p>От лёгкого старта до enterprise-контура.</p></div>
+    <div class="pgrid">
+      <div class="pcard"><div class="ic"><i class="ph ph-house"></i></div><h3>Для старта</h3><ul><li><i class="ph ph-cpu"></i> <span class="mono">2 vCPU / 8 GB</span></li><li><i class="ph ph-database"></i> SQLite + Qdrant</li><li><i class="ph ph-cpu"></i> Локальные embeddings</li></ul></div>
+      <div class="pcard rec"><span class="badge badge-teal" style="margin-bottom:12px">Рекомендуем</span><div class="ic"><i class="ph ph-hard-drives"></i></div><h3>Production</h3><ul><li><i class="ph ph-cpu"></i> <span class="mono">4–8 vCPU / 16 GB</span></li><li><i class="ph ph-database"></i> PostgreSQL + Qdrant</li><li><i class="ph ph-cpu"></i> Локальные embeddings</li></ul></div>
+      <div class="pcard"><div class="ic"><i class="ph ph-buildings"></i></div><h3>Enterprise</h3><ul><li><i class="ph ph-cpu"></i> <span class="mono">8+ vCPU / 32+ GB</span></li><li><i class="ph ph-stack"></i> Qdrant Cluster</li><li><i class="ph ph-shield-check"></i> Контроль и SLA</li></ul></div>
+    </div>
+  </div>
+</section>
+
+<section class="section v4-price" id="price">
+  <div class="am-wrap">
+    <div class="sec-title"><span class="eyebrow">Цены</span><h2>Одна подписка на весь продукт</h2></div>
+    <div class="pc">
+      <span class="badge badge-terra" style="margin-bottom:14px">Фиксированная цена</span>
+      <div class="amt">$5<span> / агент в месяц</span></div>
+      <p style="color:var(--fg-3);margin-top:10px">Разворачивается в вашем контуре.</p>
+      <ul><li><i class="ph-bold ph-check"></i> Неограниченная память</li><li><i class="ph-bold ph-check"></i> Qdrant-поиск</li><li><i class="ph-bold ph-check"></i> Локальные embeddings</li><li><i class="ph-bold ph-check"></i> Все интеграции</li><li><i class="ph-bold ph-check"></i> Local-only режим</li><li><i class="ph-bold ph-check"></i> Поддержка и обновления</li></ul>
+      <a class="btn btn-primary btn-lg" href="#" style="width:100%">Начать развёртывание</a>
+    </div>
+  </div>
+</section>
+
+<section class="section cta-final">
+  <div class="am-wrap">
+    <h2>Соберите память агентов в одну схему</h2>
+    <p>Ваши агенты делятся контекстом. Ваши данные остаются под вашим контролем.</p>
+    <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap"><a class="btn btn-primary btn-lg" href="#">Начать развёртывание <i class="ph ph-arrow-right"></i></a><a class="btn btn-secondary btn-lg" href="#"><i class="ph ph-github-logo"></i> GitHub</a></div>
+  </div>
+</section>
+
+<footer class="am-footer">
+  <div class="am-wrap">
+    <div><span class="am-logo on-dark" data-am-logo="dark"></span><p style="color:#9098A6;font-size:14.5px;margin-top:16px;max-width:280px">Единая память для ваших ИИ-агентов. Self-hosted инфраструктура для CIS-команд.</p></div>
+    <div><h4>Продукт</h4><a href="#how">Схема</a><a href="#stages">Этапы</a><a href="#deploy">Развёртывание</a><a href="#price">Цены</a></div>
+    <div><h4>Ресурсы</h4><a href="#">Документация</a><a href="#">API-референс</a><a href="#">GitHub</a><a href="#">Changelog</a></div>
+    <div><h4>Контур</h4><a href="#">РФ и СНГ</a><a href="#">Local-only</a><a href="#">Безопасность</a><a href="#">Контакты</a></div>
+  </div>
+  <div class="foot-bottom"><div class="am-wrap"><span>© 2026 ArtelMemory. Сделано для CIS.</span><span>Память остаётся в вашем контуре.</span></div></div>
+</footer>
+
+<script src="../am-logo.js"></script>
+<script>
+  // inject memory core icon into the blueprint pipeline centre
+  const slot = document.getElementById('coreSlot');
+  if (slot && window.AMLogo) {
+    slot.innerHTML = `<g transform="translate(645,128) scale(1.35)">${AMLogo.icon(AMLogo.PALETTES.onDark)}</g>`;
+  }
+</script>
+</body>
+</html>
