@@ -210,6 +210,70 @@ export async function saveMembers(
   await writeFile(path, `${JSON.stringify(data, null, 2)}\n`);
 }
 
+// Per-namespace lock — serializes member read-modify-write so concurrent
+// share/unshare requests can't clobber each other (parity with the rules store).
+const memberLocks = new Map<string, Promise<void>>();
+
+/**
+ * Run `fn` holding the per-namespace member lock. Exported so every writer of
+ * `_members.json` (admin BFF, MCP tools, prune) serializes through the SAME lock
+ * (single process → single module instance → shared map). Do NOT nest calls for
+ * the same id — the inner acquire would deadlock; call the already-locked
+ * `upsertMember`/`removeMember` instead.
+ */
+export async function withMembersLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  const previous = memberLocks.get(id) ?? Promise.resolve();
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const chained = previous.then(() => next);
+  memberLocks.set(id, chained);
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (memberLocks.get(id) === chained) memberLocks.delete(id);
+  }
+}
+
+/**
+ * Add a member, or update the scopes of an existing one, under a per-namespace
+ * lock. Preserves the original `added_by`/`added_at` for an existing member.
+ */
+export async function upsertMember(
+  dataDir: string,
+  id: string,
+  input: { agent_id: string; scopes: AgentScope[]; addedBy: string; now?: string },
+): Promise<NamespaceMember> {
+  return withMembersLock(id, async () => {
+    const members = (await loadMembers(dataDir, id)) ?? [];
+    const existing = members.find((m) => m.agent_id === input.agent_id);
+    const member: NamespaceMember = {
+      agent_id: input.agent_id,
+      scopes: [...input.scopes],
+      added_by: existing?.added_by ?? input.addedBy,
+      added_at: existing?.added_at ?? input.now ?? new Date().toISOString(),
+    };
+    const next = existing
+      ? members.map((m) => (m.agent_id === member.agent_id ? member : m))
+      : [...members, member];
+    await saveMembers(dataDir, id, next);
+    return member;
+  });
+}
+
+/** Remove a member under the per-namespace lock. Returns how many were removed. */
+export async function removeMember(dataDir: string, id: string, agentId: string): Promise<number> {
+  return withMembersLock(id, async () => {
+    const members = (await loadMembers(dataDir, id)) ?? [];
+    const next = members.filter((m) => m.agent_id !== agentId);
+    if (next.length !== members.length) await saveMembers(dataDir, id, next);
+    return members.length - next.length;
+  });
+}
+
 /**
  * Save the namespace metadata file (_namespace.json).
  */
@@ -260,14 +324,9 @@ export async function pruneOrphanedMembers(
   const result: { namespaceId: string; removed: number }[] = [];
 
   for (const id of ids) {
-    const members = await loadMembers(dataDir, id);
-    if (!members) continue;
-    const filtered = members.filter((m) => m.agent_id !== revokedAgentIdentity);
-    const removed = members.length - filtered.length;
-    if (removed > 0) {
-      await saveMembers(dataDir, id, filtered);
-      result.push({ namespaceId: id, removed });
-    }
+    // Route through the locked helper so prune can't race a concurrent share.
+    const removed = await removeMember(dataDir, id, revokedAgentIdentity);
+    if (removed > 0) result.push({ namespaceId: id, removed });
   }
 
   return result;

@@ -326,3 +326,58 @@ describe('PatStore.lookup cache behaviour', () => {
     expect(store.lookup(secret).ok).toBe(true);
   });
 });
+
+describe('PatStore write serialization', () => {
+  it('serializes concurrent rotations of the same PAT — exactly one wins', async () => {
+    const store = await openStore();
+    const { pat } = await mintDefault(store, { display_name: 'to-rotate' });
+
+    const rotateInput = {
+      display_name: 'rotated',
+      agent_identity: pat.agent_identity,
+      allowed_namespaces: pat.allowed_namespaces,
+      scopes: pat.scopes,
+      created_by: 'admin',
+      expires_at: pat.expires_at,
+    };
+
+    // Fire both without awaiting between them; the write mutex must order them
+    // so the second sees the already-revoked old PAT instead of double-minting.
+    const [a, b] = await Promise.allSettled([
+      store.rotate(pat.id, rotateInput),
+      store.rotate(pat.id, rotateInput),
+    ]);
+
+    const fulfilled = [a, b].filter((r) => r.status === 'fulfilled');
+    const rejected = [a, b].filter((r) => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(PatRotationStateError);
+
+    // Exactly one live replacement exists for that identity.
+    const live = store.list().filter((p) => !p.is_revoked && p.agent_identity === pat.agent_identity);
+    expect(live).toHaveLength(1);
+  });
+
+  it('serializes concurrent revoke + rotate — rotate after revoke is rejected', async () => {
+    const store = await openStore();
+    const { pat } = await mintDefault(store);
+
+    const [revokeRes, rotateRes] = await Promise.allSettled([
+      store.revoke(pat.id, 'concurrent'),
+      store.rotate(pat.id, {
+        display_name: 'rotated',
+        agent_identity: pat.agent_identity,
+        allowed_namespaces: pat.allowed_namespaces,
+        scopes: pat.scopes,
+        created_by: 'admin',
+        expires_at: pat.expires_at,
+      }),
+    ]);
+
+    // revoke is queued first and always succeeds; rotate then sees a revoked PAT.
+    expect(revokeRes.status).toBe('fulfilled');
+    expect(rotateRes.status).toBe('rejected');
+    expect((rotateRes as PromiseRejectedResult).reason).toBeInstanceOf(PatRotationStateError);
+  });
+});
