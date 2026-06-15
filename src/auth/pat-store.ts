@@ -39,6 +39,14 @@ export class PatStore {
   private readonly byId = new Map<string, AgentPat>();
   private readonly byPrefix = new Map<string, Set<string>>();
   private readonly cache = new Map<string, CacheEntry>();
+  /**
+   * Serializes all mutating ops (mint/rotate/revoke/delete) so their
+   * read-check-append-index critical sections never interleave. The store is an
+   * append-only log + in-memory index; two concurrent rotate/revoke calls could
+   * otherwise both pass an `is_revoked` check and double-write. Single-node, but
+   * the operator console and MCP path can both write the same store.
+   */
+  private writeChain: Promise<unknown> = Promise.resolve();
 
   private constructor(opts: PatStoreOptions) {
     this.storePath = opts.storePath;
@@ -53,7 +61,25 @@ export class PatStore {
     return store;
   }
 
+  /**
+   * Run `fn` after all previously-queued mutations settle, so mutating ops never
+   * interleave. The chain never rejects (each link swallows the prior outcome);
+   * `fn`'s own rejection still propagates to its caller.
+   */
+  private runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.writeChain.then(fn, fn);
+    this.writeChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
   async mint(input: MintInput): Promise<MintResult> {
+    return this.runExclusive(async () => this.mintLocked(input));
+  }
+
+  private async mintLocked(input: MintInput): Promise<MintResult> {
     const token = generateToken();
     const secret = token.slice(TOKEN_NAMESPACE.length);
     const prefix = secret.slice(0, 12);
@@ -83,6 +109,10 @@ export class PatStore {
   }
 
   async rotate(oldPatId: string, mintInput: MintInput): Promise<MintResult> {
+    return this.runExclusive(async () => this.rotateLocked(oldPatId, mintInput));
+  }
+
+  private async rotateLocked(oldPatId: string, mintInput: MintInput): Promise<MintResult> {
     const current = this.byId.get(oldPatId);
     if (!current) {
       throw new PatNotFoundError(oldPatId);
@@ -138,6 +168,10 @@ export class PatStore {
   }
 
   async revoke(patId: string, reason: string): Promise<AgentPat> {
+    return this.runExclusive(async () => this.revokeLocked(patId, reason));
+  }
+
+  private async revokeLocked(patId: string, reason: string): Promise<AgentPat> {
     const current = this.byId.get(patId);
     if (!current) {
       throw new PatNotFoundError(patId);
@@ -234,6 +268,10 @@ export class PatStore {
    * its disablement is auditable. Lets operators clear out piles of rotated keys.
    */
   async delete(id: string): Promise<void> {
+    return this.runExclusive(async () => this.deleteLocked(id));
+  }
+
+  private async deleteLocked(id: string): Promise<void> {
     const current = this.byId.get(id);
     if (!current) throw new PatNotFoundError(id);
     if (!current.is_revoked) throw new PatDeleteStateError(`cannot delete active PAT ${id}; revoke it first`);

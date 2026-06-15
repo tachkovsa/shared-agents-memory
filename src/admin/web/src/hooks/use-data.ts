@@ -12,7 +12,10 @@ export function useCreateNamespace() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: { id: string; display_name: string; owner_agent_id: string }) => api.createNamespace(input),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['namespaces'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['namespaces'] });
+      qc.invalidateQueries({ queryKey: ['observability'] });
+    },
   });
 }
 export function useShareNamespace(id: string) {
@@ -55,6 +58,7 @@ export function useDeleteMemory(ns: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['memories', ns] });
       qc.invalidateQueries({ queryKey: ['mem-search', ns] });
+      qc.invalidateQueries({ queryKey: ['observability'] });
     },
   });
 }
@@ -66,6 +70,7 @@ export function useWriteMemory(ns: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['memories', ns] });
       qc.invalidateQueries({ queryKey: ['mem-search', ns] });
+      qc.invalidateQueries({ queryKey: ['observability'] });
     },
   });
 }
@@ -78,28 +83,40 @@ export function useCreatePat() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.createPat,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pats'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pats'] });
+      qc.invalidateQueries({ queryKey: ['observability'] });
+    },
   });
 }
 export function useRevokePat() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason?: string }) => api.revokePat(id, reason),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pats'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pats'] });
+      qc.invalidateQueries({ queryKey: ['observability'] });
+    },
   });
 }
 export function useRotatePat() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.rotatePat(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pats'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pats'] });
+      qc.invalidateQueries({ queryKey: ['observability'] });
+    },
   });
 }
 export function useDeletePat() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.deletePat(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['pats'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pats'] });
+      qc.invalidateQueries({ queryKey: ['observability'] });
+    },
   });
 }
 

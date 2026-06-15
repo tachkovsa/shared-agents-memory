@@ -541,23 +541,26 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
       const ns = await loadNamespace(dataDir, input.id);
       if (!ns) return notFoundResponse(input.id);
 
-      const entry = {
-        agent_id: input.agent_id,
-        scopes: [...input.scopes] as AgentScope[],
-        added_by: sessionPat.agent_identity,
-        added_at: now().toISOString(),
-      };
-
-      // Serialize with the admin BFF / prune writers on the same lock.
-      await withMembersLock(input.id, async () => {
+      // Serialize with the admin BFF / prune writers on the same lock. Built
+      // inside the lock so an update preserves the original added_by/added_at
+      // (only scopes change), matching upsertMember in store.ts — provenance of
+      // a membership must not be rewritten every time its scopes are edited.
+      const entry = await withMembersLock(input.id, async () => {
         const members = (await loadMembers(dataDir, input.id)) ?? [];
         const existing = members.findIndex((m) => m.agent_id === input.agent_id);
+        const member = {
+          agent_id: input.agent_id,
+          scopes: [...input.scopes] as AgentScope[],
+          added_by: existing >= 0 ? members[existing].added_by : sessionPat.agent_identity,
+          added_at: existing >= 0 ? members[existing].added_at : now().toISOString(),
+        };
         if (existing >= 0) {
-          members[existing] = entry; // update existing member's scopes
+          members[existing] = member; // update existing member's scopes
         } else {
-          members.push(entry);
+          members.push(member);
         }
         await saveMembers(dataDir, input.id, members);
+        return member;
       });
       await recordAuthSuccess('namespace_add_member', 'namespace:admin');
 

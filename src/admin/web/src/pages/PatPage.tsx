@@ -125,6 +125,9 @@ export function PatPage() {
               const res = await create.mutateAsync(input);
               setShowCreate(false);
               setSecret(res);
+              // Drop the plaintext secret from React Query's mutation cache; it
+              // now lives only in `secret` state, cleared when the modal closes.
+              create.reset();
             } catch (e) {
               toast(e instanceof ApiError ? e.code : 'Не удалось создать ключ');
             }
@@ -189,6 +192,8 @@ export function PatPage() {
                     const res = await rotate.mutateAsync(rotating.id);
                     setRotating(null);
                     setSecret(res);
+                    // Drop the plaintext secret from the mutation cache (see create).
+                    rotate.reset();
                   } catch (e) {
                     toast(e instanceof ApiError ? e.code : 'Ошибка ротации');
                   }
