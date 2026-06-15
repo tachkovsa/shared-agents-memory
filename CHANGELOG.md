@@ -9,6 +9,23 @@ and a GitHub Release via `.github/workflows/release.yml`.
 
 ### Added
 
+- **Local embeddings deploy bundle — TEI + bge-m3** (ADR-0010 §3.4). New
+  `docker-compose.embedder.yml` overlay adds a Hugging Face text-embeddings-inference
+  (TEI) sidecar serving `BAAI/bge-m3` (1024-dim) over the OpenAI-compatible
+  `/v1/embeddings` route on the internal docker network — self-hosted embeddings,
+  no external dependency, data residency. Opt-in: apply on top of
+  `docker-compose.yml` + `docker-compose.prod.yml`; the cloud (OpenRouter)
+  deployment is unaffected. `.env.example` now presents two pre-matched
+  model/dimension profiles (self-host bge-m3/1024, cloud qwen3/4096) to prevent
+  the dimension-mismatch footgun. See `docs/ops/vds-deploy.md`.
+
+- **Re-embed migration CLI** (`scripts/reembed-collection.ts`). Regenerates
+  vectors from the original `content` text when switching embedding models (e.g.
+  cloud qwen3 4096-dim → self-host bge-m3 1024-dim), where vectors cannot be
+  copied directly. Scrolls a source Qdrant collection, re-embeds via the
+  configured provider, and upserts each point (same id + payload, new vector)
+  into the target. Idempotent; `--dry-run`, `--skip-deleted`, `--batch` flags.
+
 - **Admin BFF read API — namespaces** (ADR-0008/0009). Operator-authenticated
   read endpoints the console will consume: `GET /api/admin/namespaces` (list) and
   `GET /api/admin/namespaces/:id` (detail + members). Behind the session +

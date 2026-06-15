@@ -1,0 +1,67 @@
+# Local self-hosted embeddings overlay (ADR-0010) — bge-m3 via HF TEI.
+#
+# Apply ON TOP of the base + prod overlays:
+#
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.prod.yml \
+#     -f docker-compose.embedder.yml up -d
+#
+# This switches the `mcp` service from a cloud embeddings provider to a local
+# text-embeddings-inference (TEI) sidecar serving BAAI/bge-m3 (1024-dim) over
+# its OpenAI-compatible /v1/embeddings route, on the internal docker network
+# only (no host port). Data residency + no external embedding dependency.
+#
+# Why an overlay (not folded into docker-compose.prod.yml): the OpenRouter
+# deployment (e.g. the original memory.tachkov.dev box) must keep working with
+# just base + prod. The self-host profile opts in by adding this third file.
+#
+# Env vars (set in /etc/shared-agents-memory/.env or export before running):
+#   TEI_IMAGE_TAG        — TEI image tag (default: cpu-1.9). Bump as releases land.
+#   EMBEDDINGS_MODEL_ID  — HF model id TEI loads (default: BAAI/bge-m3, 1024-dim).
+#   TEI_DATA_DIR         — host path for the TEI model cache (default below).
+#   EMBEDDINGS_DIMENSION — MUST match the model (bge-m3 → 1024). Immutable once
+#                          the Qdrant collection exists (ADR-0010 §3.3).
+#
+# IMPORTANT: the embeddings dimension is fixed at collection-creation time. If
+# the existing collection was created at another dimension (e.g. 4096 for cloud
+# qwen3), the mcp server fails fast with QdrantSchemaMismatchError. Migrate via
+# scripts/reembed-collection.ts (re-embeds from text into a fresh collection).
+
+services:
+  embedder:
+    image: ghcr.io/huggingface/text-embeddings-inference:${TEI_IMAGE_TAG:-cpu-1.9}
+    container_name: sam-embedder
+    restart: always
+    # --auto-truncate: memories can exceed bge-m3's 8192-token window
+    # (MEMORY_MAX_CONTENT_LENGTH is 32k chars); truncate instead of 413-ing.
+    command: ["--model-id", "${EMBEDDINGS_MODEL_ID:-BAAI/bge-m3}", "--auto-truncate"]
+    volumes:
+      # Persist the downloaded model so restarts don't re-pull (~2GB).
+      - type: bind
+        source: ${TEI_DATA_DIR:-/var/lib/shared-agents-memory/tei}
+        target: /data
+    # No host port — the mcp container reaches it as http://embedder/v1 over the
+    # internal docker network (TEI listens on :80 inside the container).
+    expose:
+      - "80"
+
+  mcp:
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      # Don't gate on embedder health: TEI has no shell/curl for a portable
+      # healthcheck, and the mcp server tolerates a not-yet-ready embedder
+      # (retry + circuit breaker in src/embeddings.ts). First boot pulls the
+      # model (~1-2 min); embedding calls during that window retry transparently.
+      embedder:
+        condition: service_started
+    environment:
+      # Point the OpenAI-compatible embeddings client at the local TEI sidecar.
+      EMBEDDINGS_BASE_URL: http://embedder/v1
+      # TEI ignores the request `model` field (it serves --model-id); this is a
+      # human-facing label only.
+      EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-bge-m3}
+      EMBEDDINGS_DIMENSION: ${EMBEDDINGS_DIMENSION:-1024}
+      # TEI needs no auth; config.ts still requires a non-empty value.
+      EMBEDDINGS_API_KEY: ${EMBEDDINGS_API_KEY:-local}
