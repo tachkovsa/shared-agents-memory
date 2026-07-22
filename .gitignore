@@ -20,8 +20,10 @@ temp/
 # Design screenshots — generated locally, not tracked.
 design/screenshots/
 
-# Extra CA certs (e.g. GigaChat / Минцифры root). Ship out of band, never commit.
-# The certs/ dir itself stays tracked via certs/README.md.
+# Extra CA certs. The PUBLIC Минцифры root CA (needed for GigaChat TLS) is
+# committed below so operators don't have to hunt it down behind a VPN. Any
+# OTHER cert/key material stays ignored — never commit private keys.
 certs/*.pem
 certs/*.crt
 certs/*.cer
+!certs/russian_trusted_root_ca.pem

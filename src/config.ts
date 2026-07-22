@@ -53,6 +53,14 @@ export interface Config {
     folderId?: string;
     /** Yandex auth method (provider=yandex): `API_KEY` (default) or `IAM_TOKEN`. */
     authMethod?: string;
+    /**
+     * Optional cap on the number of characters sent per input to the embeddings
+     * endpoint. Providers without server-side auto-truncation (notably GigaChat,
+     * whose Embeddings/EmbeddingsGigaR models 413 on oversize input) need this;
+     * the client also adaptively truncates on a 413, but a static cap avoids the
+     * wasted first over-limit call. 0 = disabled (default).
+     */
+    maxInputChars?: number;
   };
   qdrant: {
     url: string;
@@ -201,6 +209,7 @@ export function loadConfig(): Config {
       scope: process.env['EMBEDDINGS_SCOPE'] ?? 'GIGACHAT_API_PERS',
       folderId: process.env['EMBEDDINGS_FOLDER_ID'] || undefined,
       authMethod: process.env['EMBEDDINGS_AUTH_METHOD'] ?? 'API_KEY',
+      maxInputChars: clampInt(parseIntEnv('EMBEDDINGS_MAX_INPUT_CHARS', 0), 0, 1_000_000),
     },
     qdrant: {
       url: process.env['QDRANT_URL'] ?? 'http://localhost:6333',
