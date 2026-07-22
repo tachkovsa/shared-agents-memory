@@ -1,4 +1,5 @@
 import type { Config } from './config.js';
+import { StaticBearerAuth, type EmbeddingAuthProvider } from './embeddings-auth.js';
 
 // ---------------------------------------------------------------------------
 // Public metrics interface — no Prometheus dep; wired in #9.
@@ -255,14 +256,35 @@ export interface EmbeddingClientOptions {
   sleep?: (ms: number) => Promise<void>;
   /** Override breaker config */
   breakerConfig?: Partial<BreakerConfig>;
+  /**
+   * How to authorize each request. Defaults to a static `Bearer <apiKey>`
+   * (OpenAI-compatible). Providers with a token exchange (e.g. GigaChat) pass a
+   * custom provider; see embeddings-auth.ts and the createEmbeddingClient factory.
+   */
+  auth?: EmbeddingAuthProvider;
+}
+
+// ---------------------------------------------------------------------------
+// EmbeddingProvider — the surface every provider implementation exposes
+// ---------------------------------------------------------------------------
+
+/**
+ * Provider-agnostic contract consumed by the memory service, transports and the
+ * re-embed CLI. `EmbeddingClient` (OpenAI-compatible incl. GigaChat) and
+ * `YandexEmbeddingClient` both implement it; pick one via createEmbeddingClient.
+ */
+export interface EmbeddingProvider {
+  embed(input: string): Promise<number[]>;
+  embedBatch(inputs: string[]): Promise<number[][]>;
+  /** Circuit-breaker state, surfaced on /healthz. */
+  getBreakerState(): 'closed' | 'open' | 'half-open';
 }
 
 // ---------------------------------------------------------------------------
 // EmbeddingClient
 // ---------------------------------------------------------------------------
 
-export class EmbeddingClient {
-  private readonly apiKey: string;
+export class EmbeddingClient implements EmbeddingProvider {
   private readonly baseUrl: string;
   private readonly model: string;
   private readonly expectedDimension: number;
@@ -271,9 +293,9 @@ export class EmbeddingClient {
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly breaker: CircuitBreaker;
+  private readonly auth: EmbeddingAuthProvider;
 
   constructor(config: Config, opts: EmbeddingClientOptions = {}) {
-    this.apiKey = config.embeddings.apiKey;
     this.baseUrl = config.embeddings.baseUrl;
     this.model = config.embeddings.model;
     this.expectedDimension = config.embeddings.embeddingDimension;
@@ -282,6 +304,7 @@ export class EmbeddingClient {
     this.now = opts.now ?? (() => Date.now());
     this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
     this.breaker = new CircuitBreaker(opts.breakerConfig, this.now);
+    this.auth = opts.auth ?? new StaticBearerAuth(config.embeddings.apiKey);
   }
 
   /**
@@ -323,10 +346,13 @@ export class EmbeddingClient {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
         try {
+          // Resolve auth inside the timeout window so a provider's token
+          // exchange (e.g. GigaChat OAuth) shares the same abort/timeout budget.
+          const authHeaders = await this.auth.authHeaders(controller.signal);
           response = await this.fetchImpl(`${this.baseUrl}/embeddings`, {
             method: 'POST',
             headers: {
-              Authorization: `Bearer ${this.apiKey}`,
+              ...authHeaders,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({ model: this.model, input: inputs }),

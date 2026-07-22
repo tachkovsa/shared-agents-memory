@@ -76,9 +76,15 @@ See [ADR-0003 §3.4](adr/0003-transport-stdio-and-http.md) for the rationale on 
 
 | Var | Required | Default | Notes |
 |---|---|---|---|
-| `EMBEDDINGS_API_KEY` | ✅ | — | Embeddings provider API key (OpenAI-compatible endpoint). |
-| `EMBEDDINGS_BASE_URL` | | `https://openrouter.ai/api/v1` | Override for OpenAI / vLLM / Ollama / etc., or for integration tests against a mock. |
-| `EMBEDDINGS_MODEL` | | `qwen/qwen3-embedding-8b` | Vector dim locked at 4096 (ADR-0005). |
+| `EMBEDDINGS_PROVIDER` | | `openai` | `openai` (any OpenAI-compatible API), `gigachat` (Sber), or `yandex` (Yandex Cloud). Selects the auth + request protocol. |
+| `EMBEDDINGS_API_KEY` | ✅ | — | OpenAI/OpenRouter key, GigaChat base64 authorization key, or Yandex API key / OAuth token — depends on provider. |
+| `EMBEDDINGS_BASE_URL` | | provider default | `openai`→OpenRouter, `gigachat`→`…/api/v1`, `yandex`→Foundation Models. Override for OpenAI / vLLM / Ollama / a mock. |
+| `EMBEDDINGS_MODEL` | | provider default | `qwen/qwen3-embedding-8b` (openai), `Embeddings` (gigachat), `text-search-doc` (yandex). |
+| `EMBEDDINGS_DIMENSION` | | `1024` | Must match the model and the Qdrant collection (immutable, ADR-0010 §3.3). qwen3=4096, bge-m3/GigaChat=1024, Yandex=256. |
+| `EMBEDDINGS_SCOPE` | | `GIGACHAT_API_PERS` | GigaChat OAuth scope: `_PERS` / `_B2B` / `_CORP`. |
+| `EMBEDDINGS_FOLDER_ID` | yandex | — | Yandex Cloud folder id; required when `EMBEDDINGS_PROVIDER=yandex`. |
+| `EMBEDDINGS_AUTH_METHOD` | | `API_KEY` | Yandex only: `API_KEY` or `IAM_TOKEN` (exchanges an OAuth token for a short-lived IAM token). |
+| `NODE_EXTRA_CA_CERTS` | gigachat | unset | Path to the Минцифры root CA. Required for GigaChat TLS or calls fail with `SELF_SIGNED_CERT_IN_CHAIN`. See `certs/README.md`. |
 | `QDRANT_URL` | | `http://localhost:6333` | Use `http://qdrant:6333` inside compose. |
 | `QDRANT_API_KEY` | | unset | MCP-side client key. Pair with `QDRANT__SERVICE__API_KEY` to enable auth. |
 | `QDRANT__SERVICE__API_KEY` | | unset | Qdrant-server side key. Must match `QDRANT_API_KEY`. **Never set to empty string** — Qdrant treats that as "auth on with empty key" and returns 401 on every request. |

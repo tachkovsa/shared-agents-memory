@@ -45,7 +45,8 @@
 import { parseArgs } from 'node:util';
 import { QdrantClient } from '@qdrant/js-client-rest';
 import { loadConfig } from '../src/config.js';
-import { EmbeddingClient } from '../src/embeddings.js';
+import type { EmbeddingProvider } from '../src/embeddings.js';
+import { createEmbeddingClient } from '../src/embeddings-factory.js';
 import { createQdrantClient, initCollection } from '../src/qdrant.js';
 
 // ---------------------------------------------------------------------------
@@ -66,6 +67,9 @@ export class ReembedError extends Error {
 // Types
 // ---------------------------------------------------------------------------
 
+/** Qdrant scroll pagination cursor (`next_page_offset` / `scroll.offset`). */
+type ScrollOffset = string | number | Record<string, unknown> | null | undefined;
+
 export interface ReembedSummary {
   /** Points read from the source collection. */
   scanned: number;
@@ -79,7 +83,7 @@ export interface ReembedSummary {
 export interface ReembedDeps {
   source: QdrantClient;
   target: QdrantClient;
-  embeddings: Pick<EmbeddingClient, 'embedBatch'>;
+  embeddings: Pick<EmbeddingProvider, 'embedBatch'>;
   sourceCollection: string;
   targetCollection: string;
   /** Scroll/embed page size. */
@@ -104,7 +108,7 @@ export async function reembedCollection(deps: ReembedDeps): Promise<ReembedSumma
   const log = deps.log ?? (() => undefined);
   const summary: ReembedSummary = { scanned: 0, upserted: 0, skipped: 0, errors: [] };
 
-  let offset: string | number | Record<string, unknown> | null | undefined = undefined;
+  let offset: ScrollOffset = undefined;
 
   for (;;) {
     const page = await deps.source.scroll(deps.sourceCollection, {
@@ -171,7 +175,10 @@ export async function reembedCollection(deps: ReembedDeps): Promise<ReembedSumma
     }
 
     if (!page.next_page_offset) break;
-    offset = page.next_page_offset as typeof offset;
+    // Cast to the stable declared union, NOT `typeof offset`: control-flow
+    // analysis narrows `typeof offset` to `undefined` at this point (its value on
+    // the first loop pass), which would reject the assignment (TS2352).
+    offset = page.next_page_offset as ScrollOffset;
   }
 
   return summary;
@@ -241,7 +248,7 @@ async function main(): Promise<void> {
     ? new QdrantClient({ url: cli.sourceUrl, apiKey: config.qdrant.apiKey })
     : target;
 
-  const embeddings = new EmbeddingClient(config);
+  const embeddings = createEmbeddingClient(config);
 
   const log = (msg: string): void => {
     if (cli.verbose) process.stdout.write(`${msg}\n`);
