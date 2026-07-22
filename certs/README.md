@@ -16,10 +16,13 @@ public roots Node already trusts, so leave `NODE_EXTRA_CA_CERTS` unset for them.
 
 ## Setup
 
-1. Download the Минцифры root CA (PEM). Official source:
+1. **`russian_trusted_root_ca.pem` is committed to this directory.** It is the
+   PUBLIC Минцифры root CA (subject `CN=Russian Trusted Root CA`, valid
+   2022–2032) — not a secret — so you don't have to hunt it down behind a VPN.
+   The Dockerfile bakes it into the image at `/app/certs`. If you ever need to
+   refresh it, the official source is
    <https://www.gosuslugi.ru/crt> → «Сертификат «Минцифры России» (корневой)».
-   Save it here as `russian_trusted_root_ca.pem`. (Not committed — see
-   `.gitignore`; ship the CA to your box out of band.)
+   `.gitignore` keeps every OTHER cert/key in this dir untracked.
 
 2. Point Node at it via `NODE_EXTRA_CA_CERTS`. Two ways:
 

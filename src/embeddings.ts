@@ -284,6 +284,20 @@ export interface EmbeddingProvider {
 // EmbeddingClient
 // ---------------------------------------------------------------------------
 
+/**
+ * Truncate to at most `max` Unicode code points. Counts by code point (via
+ * Array.from) rather than UTF-16 units or bytes, so it never splits a surrogate
+ * pair and treats Cyrillic and Latin the same way per character. Note this is a
+ * character cap, NOT a token cap — the adaptive 413 retry in embedBatch is what
+ * ultimately guarantees the request fits, since char↔token density varies with
+ * script (Cyrillic tokenizes to more tokens per byte than Latin).
+ */
+function truncateToChars(s: string, max: number): string {
+  if (max <= 0 || s.length <= max) return s;
+  const cps = Array.from(s);
+  return cps.length <= max ? s : cps.slice(0, max).join('');
+}
+
 export class EmbeddingClient implements EmbeddingProvider {
   private readonly baseUrl: string;
   private readonly model: string;
@@ -294,11 +308,13 @@ export class EmbeddingClient implements EmbeddingProvider {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly breaker: CircuitBreaker;
   private readonly auth: EmbeddingAuthProvider;
+  private readonly maxInputChars: number;
 
   constructor(config: Config, opts: EmbeddingClientOptions = {}) {
     this.baseUrl = config.embeddings.baseUrl;
     this.model = config.embeddings.model;
     this.expectedDimension = config.embeddings.embeddingDimension;
+    this.maxInputChars = config.embeddings.maxInputChars ?? 0;
     this.metrics = opts.metrics ?? NO_OP_METRICS;
     this.fetchImpl = opts.fetchImpl ?? ((url, init) => fetch(url, init));
     this.now = opts.now ?? (() => Date.now());
@@ -338,6 +354,16 @@ export class EmbeddingClient implements EmbeddingProvider {
     const MAX_RETRIES = 3; // 4 total attempts
     let lastError: unknown;
 
+    // Provider input-size guard. GigaChat's embedding models 413 on oversize
+    // input with no server-side auto-truncation (unlike TEI's --auto-truncate).
+    // Apply the optional static char cap up front, then shrink adaptively on a
+    // 413 below. The adaptive loop — not a char→token estimate — is what makes
+    // the request eventually fit regardless of the Cyrillic/Latin token mix.
+    let workingInputs = this.maxInputChars > 0 ? inputs.map((s) => truncateToChars(s, this.maxInputChars)) : inputs;
+    let truncateRetries = 0;
+    const MAX_TRUNCATE_RETRIES = 8;
+    const TRUNCATE_FLOOR = 256; // don't shrink below this — a 413 here is a real error
+
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       this.metrics.onAttempt();
 
@@ -355,7 +381,7 @@ export class EmbeddingClient implements EmbeddingProvider {
               ...authHeaders,
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ model: this.model, input: inputs }),
+            body: JSON.stringify({ model: this.model, input: workingInputs }),
             signal: controller.signal,
           });
         } finally {
@@ -392,6 +418,24 @@ export class EmbeddingClient implements EmbeddingProvider {
         const status = response.status;
         const rawBody = await response.text();
         const bodyExcerpt = redactAuthFromBody(rawBody);
+
+        // Adaptive truncation. A 413 means the input exceeds the provider's
+        // limit (GigaChat has no auto-truncate). Shrink the longest input by 30%
+        // and retry — without consuming a normal retry attempt or tripping the
+        // breaker, since the fix is deterministic, not a transient fault. Bounded
+        // by MAX_TRUNCATE_RETRIES and a floor so a genuinely-unfixable 413 still
+        // surfaces.
+        if (status === 413 && truncateRetries < MAX_TRUNCATE_RETRIES) {
+          const longest = workingInputs.reduce((m, s) => Math.max(m, Array.from(s).length), 0);
+          const nextBudget = Math.floor(longest * 0.7);
+          if (longest > TRUNCATE_FLOOR && nextBudget >= TRUNCATE_FLOOR && nextBudget < longest) {
+            workingInputs = workingInputs.map((s) => truncateToChars(s, nextBudget));
+            truncateRetries++;
+            this.metrics.onRetry('http_413_truncate');
+            attempt--; // this pass doesn't count against the normal retry budget
+            continue;
+          }
+        }
 
         if (NON_RETRYABLE_STATUSES.has(status)) {
           // Fail immediately — do not retry
