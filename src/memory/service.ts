@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { QdrantClient } from '@qdrant/js-client-rest';
-import type { EmbeddingClient } from '../embeddings.js';
+import type { EmbeddingProvider } from '../embeddings.js';
 import { appendFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
@@ -52,7 +52,7 @@ export class MemoryNotFoundError extends Error {
 
 export interface MemoryServiceDeps {
   qdrant: QdrantClient;
-  embeddings: EmbeddingClient;
+  embeddings: EmbeddingProvider;
   collection: string;
   now?: () => Date;
   /**
@@ -79,7 +79,7 @@ export interface MemoryServiceDeps {
 
 export class MemoryService {
   private readonly qdrant: QdrantClient;
-  private readonly embeddings: EmbeddingClient;
+  private readonly embeddings: EmbeddingProvider;
   private readonly collection: string;
   private readonly now: () => Date;
   private readonly loadDedupThreshold?: (namespaceId: string) => Promise<number>;

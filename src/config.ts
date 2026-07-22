@@ -2,6 +2,9 @@ import 'dotenv/config';
 
 export type TransportMode = 'stdio' | 'http';
 
+/** Embeddings provider selector (ADR-0005). */
+export type EmbeddingsProvider = 'openai' | 'gigachat' | 'yandex';
+
 /** Qdrant vector quantization config (ADR-0010 §3.4). */
 export interface QdrantQuantizationConfig {
   /** `int8` scalar quantization, or `none` to disable. */
@@ -33,10 +36,23 @@ export interface Config {
    * the `EMBEDDINGS_*` env vars.
    */
   embeddings: {
+    /**
+     * Which provider protocol to speak. `openai` (default) covers every
+     * OpenAI-compatible endpoint (OpenRouter, OpenAI, vLLM, TEI, …). `gigachat`
+     * reuses the OpenAI-shaped client with a cached OAuth token. `yandex` uses
+     * the Yandex Cloud Foundation Models protocol. See createEmbeddingClient.
+     */
+    provider?: EmbeddingsProvider;
     apiKey: string;
     baseUrl: string;
     model: string;
     embeddingDimension: number;
+    /** GigaChat OAuth scope (provider=gigachat). Default GIGACHAT_API_PERS. */
+    scope?: string;
+    /** Yandex Cloud folder id (provider=yandex) — required to build the model URI. */
+    folderId?: string;
+    /** Yandex auth method (provider=yandex): `API_KEY` (default) or `IAM_TOKEN`. */
+    authMethod?: string;
   };
   qdrant: {
     url: string;
@@ -79,10 +95,47 @@ function parseFloatEnv(name: string, defaultValue: number): number {
   return Number.isFinite(n) && n > 0 ? n : defaultValue;
 }
 
+/** Default embeddings base URL per provider when EMBEDDINGS_BASE_URL is unset. */
+function defaultEmbeddingsBaseUrl(provider: EmbeddingsProvider): string {
+  switch (provider) {
+    case 'gigachat':
+      return 'https://gigachat.devices.sberbank.ru/api/v1';
+    case 'yandex':
+      return 'https://llm.api.cloud.yandex.net/foundationModels/v1';
+    case 'openai':
+    default:
+      return 'https://openrouter.ai/api/v1';
+  }
+}
+
+/** Default embeddings model per provider when EMBEDDINGS_MODEL is unset. */
+function defaultEmbeddingsModel(provider: EmbeddingsProvider): string {
+  switch (provider) {
+    case 'gigachat':
+      return 'Embeddings';
+    case 'yandex':
+      return 'text-search-doc';
+    case 'openai':
+    default:
+      return 'qwen/qwen3-embedding-8b';
+  }
+}
+
 export function loadConfig(): Config {
   const transport = (process.env['TRANSPORT'] ?? 'stdio') as TransportMode;
   if (transport !== 'stdio' && transport !== 'http') {
     throw new Error(`TRANSPORT must be "stdio" or "http", got: ${transport}`);
+  }
+
+  const embeddingsProvider = (process.env['EMBEDDINGS_PROVIDER'] ?? 'openai') as EmbeddingsProvider;
+  if (!['openai', 'gigachat', 'yandex'].includes(embeddingsProvider)) {
+    throw new Error(
+      `EMBEDDINGS_PROVIDER must be "openai", "gigachat" or "yandex", got: ${embeddingsProvider}`,
+    );
+  }
+  // Yandex builds an emb://<folder>/<model> URI, so the folder id is mandatory.
+  if (embeddingsProvider === 'yandex' && !process.env['EMBEDDINGS_FOLDER_ID']) {
+    throw new Error('EMBEDDINGS_FOLDER_ID is required when EMBEDDINGS_PROVIDER=yandex.');
   }
 
   const bindHost = process.env['HTTP_BIND_HOST'] ?? '127.0.0.1';
@@ -136,14 +189,18 @@ export function loadConfig(): Config {
       keepaliveSec,
     },
     embeddings: {
+      provider: embeddingsProvider,
       apiKey: requireEnv('EMBEDDINGS_API_KEY'),
-      baseUrl:
-        process.env['EMBEDDINGS_BASE_URL'] ??
-        'https://openrouter.ai/api/v1',
-      model: process.env['EMBEDDINGS_MODEL'] ?? 'qwen/qwen3-embedding-8b',
+      // Base URL / model defaults depend on the provider so a minimal
+      // gigachat/yandex config (just provider + key + folder) works out of the box.
+      baseUrl: process.env['EMBEDDINGS_BASE_URL'] ?? defaultEmbeddingsBaseUrl(embeddingsProvider),
+      model: process.env['EMBEDDINGS_MODEL'] ?? defaultEmbeddingsModel(embeddingsProvider),
       // ADR-0010 §3.3: provider-driven, configurable. Default 1024 (bge-m3,
-      // self-host profile). Cloud qwen3 deployments set EMBEDDINGS_DIMENSION=4096.
+      // self-host profile). Cloud qwen3 = 4096; GigaChat = 1024; Yandex = 256.
       embeddingDimension: clampInt(parseIntEnv('EMBEDDINGS_DIMENSION', 1024), 1, 65_536),
+      scope: process.env['EMBEDDINGS_SCOPE'] ?? 'GIGACHAT_API_PERS',
+      folderId: process.env['EMBEDDINGS_FOLDER_ID'] || undefined,
+      authMethod: process.env['EMBEDDINGS_AUTH_METHOD'] ?? 'API_KEY',
     },
     qdrant: {
       url: process.env['QDRANT_URL'] ?? 'http://localhost:6333',

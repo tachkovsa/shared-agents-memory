@@ -19,3 +19,9 @@ temp/
 
 # Design screenshots — generated locally, not tracked.
 design/screenshots/
+
+# Extra CA certs (e.g. GigaChat / Минцифры root). Ship out of band, never commit.
+# The certs/ dir itself stays tracked via certs/README.md.
+certs/*.pem
+certs/*.crt
+certs/*.cer

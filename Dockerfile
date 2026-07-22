@@ -54,6 +54,10 @@ WORKDIR /app
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./
+# Extra CA certs (e.g. the Минцифры root for GigaChat). The dir ships tracked
+# with just a README; if an operator drops a PEM in before building, it bundles
+# into the image. Activate it with NODE_EXTRA_CA_CERTS (see certs/README.md).
+COPY --chown=node:node certs ./certs
 
 USER node
 

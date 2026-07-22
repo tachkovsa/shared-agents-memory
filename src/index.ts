@@ -7,7 +7,7 @@ import {
   runBootstrapIfNeeded,
 } from './auth/index.js';
 import { loadConfig } from './config.js';
-import { EmbeddingClient } from './embeddings.js';
+import { createEmbeddingClient } from './embeddings-factory.js';
 import { MemoryService } from './memory/service.js';
 import { promEmbeddingMetrics } from './metrics/embeddings.js';
 import { createQdrantClient } from './qdrant.js';
@@ -39,7 +39,7 @@ async function main(): Promise<void> {
   }
 
   const qdrant = createQdrantClient(config);
-  const embeddings = new EmbeddingClient(config, { metrics: promEmbeddingMetrics });
+  const embeddings = createEmbeddingClient(config, { metrics: promEmbeddingMetrics });
 
   // Admin console — additive and opt-in (ADR-0008 §3.2). Off unless ADMIN_ENABLED=true,
   // so the default MCP container behaves exactly as before. Separate listener; the

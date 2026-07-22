@@ -19,7 +19,7 @@ import {
   resolveSampleRate,
 } from '../auth/index.js';
 import type { Config } from '../config.js';
-import { EmbeddingClient } from '../embeddings.js';
+import type { EmbeddingProvider } from '../embeddings.js';
 import {
   DEDUP_DEFAULT_THRESHOLD,
   DEFAULT_DECAY_WEIGHT,
@@ -44,7 +44,7 @@ export interface StdioDeps {
   patStore: PatStore;
   pepper: Buffer;
   qdrant: QdrantClient;
-  embeddings: EmbeddingClient;
+  embeddings: EmbeddingProvider;
 }
 
 export async function runStdioTransport(deps: StdioDeps): Promise<void> {
