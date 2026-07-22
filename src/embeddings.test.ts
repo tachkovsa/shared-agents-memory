@@ -165,6 +165,69 @@ describe('EmbeddingClient — adaptive truncation on 413', () => {
   });
 });
 
+describe('EmbeddingClient — concurrency limiter', () => {
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('caps in-flight requests at maxConcurrency=1 and queues the rest', async () => {
+    const vec = make4096Vector();
+    let active = 0;
+    let peak = 0;
+    const resolvers: Array<() => void> = [];
+    const fetch = vi.fn<FetchImpl>().mockImplementation(() => {
+      active++;
+      peak = Math.max(peak, active);
+      return new Promise((resolve) => {
+        resolvers.push(() => {
+          active--;
+          resolve(makeOkResponse([vec]));
+        });
+      });
+    });
+    const { client } = makeClient(fetch, { maxConcurrency: 1 });
+
+    const p1 = client.embed('a');
+    const p2 = client.embed('b');
+    await flush();
+    expect(fetch).toHaveBeenCalledTimes(1); // second call is queued
+
+    resolvers.shift()!(); // finish the first request
+    await p1;
+    await flush();
+    expect(fetch).toHaveBeenCalledTimes(2); // slot freed → second starts
+
+    resolvers.shift()!();
+    await p2;
+    expect(peak).toBe(1);
+  });
+
+  it('runs requests concurrently when maxConcurrency=0 (default/unlimited)', async () => {
+    const vec = make4096Vector();
+    let active = 0;
+    let peak = 0;
+    const resolvers: Array<() => void> = [];
+    const fetch = vi.fn<FetchImpl>().mockImplementation(() => {
+      active++;
+      peak = Math.max(peak, active);
+      return new Promise((resolve) => {
+        resolvers.push(() => {
+          active--;
+          resolve(makeOkResponse([vec]));
+        });
+      });
+    });
+    const { client } = makeClient(fetch); // maxConcurrency unset → 0
+
+    const p1 = client.embed('a');
+    const p2 = client.embed('b');
+    await flush();
+    expect(fetch).toHaveBeenCalledTimes(2); // both in flight at once
+
+    resolvers.forEach((r) => r());
+    await Promise.all([p1, p2]);
+    expect(peak).toBe(2);
+  });
+});
+
 describe('EmbeddingClient — dimension validation', () => {
   it('throws EmbeddingDimensionError when response has wrong dimensions', async () => {
     const shortVec = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]; // 8 dims

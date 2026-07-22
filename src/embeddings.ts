@@ -285,6 +285,37 @@ export interface EmbeddingProvider {
 // ---------------------------------------------------------------------------
 
 /**
+ * Minimal FIFO concurrency limiter. `acquire()` resolves immediately while
+ * fewer than `max` permits are held; otherwise it queues and resolves when a
+ * prior holder releases, preserving arrival order. `max <= 0` disables the gate
+ * (acquire is a no-op). Used to honour providers that cap concurrent requests
+ * per credential (a GigaChat PERS token allows only one in-flight stream).
+ */
+export class Semaphore {
+  private active = 0;
+  private readonly waiters: Array<() => void> = [];
+
+  constructor(private readonly max: number) {}
+
+  async acquire(): Promise<() => void> {
+    if (this.max <= 0) return () => {};
+    if (this.active < this.max) {
+      this.active++;
+      return () => this.release();
+    }
+    await new Promise<void>((resolve) => this.waiters.push(resolve));
+    this.active++;
+    return () => this.release();
+  }
+
+  private release(): void {
+    this.active--;
+    const next = this.waiters.shift();
+    if (next) next();
+  }
+}
+
+/**
  * Truncate to at most `max` Unicode code points. Counts by code point (via
  * Array.from) rather than UTF-16 units or bytes, so it never splits a surrogate
  * pair and treats Cyrillic and Latin the same way per character. Note this is a
@@ -309,12 +340,14 @@ export class EmbeddingClient implements EmbeddingProvider {
   private readonly breaker: CircuitBreaker;
   private readonly auth: EmbeddingAuthProvider;
   private readonly maxInputChars: number;
+  private readonly concurrency: Semaphore;
 
   constructor(config: Config, opts: EmbeddingClientOptions = {}) {
     this.baseUrl = config.embeddings.baseUrl;
     this.model = config.embeddings.model;
     this.expectedDimension = config.embeddings.embeddingDimension;
     this.maxInputChars = config.embeddings.maxInputChars ?? 0;
+    this.concurrency = new Semaphore(config.embeddings.maxConcurrency ?? 0);
     this.metrics = opts.metrics ?? NO_OP_METRICS;
     this.fetchImpl = opts.fetchImpl ?? ((url, init) => fetch(url, init));
     this.now = opts.now ?? (() => Date.now());
@@ -340,10 +373,27 @@ export class EmbeddingClient implements EmbeddingProvider {
   }
 
   /**
-   * Generate embeddings for multiple inputs in a single request.
-   * Implements retry-with-backoff and circuit breaker per ADR-0005 §3.2/§3.7.
+   * Generate embeddings for multiple inputs in a single request. Gates on the
+   * concurrency limiter first (a no-op when maxConcurrency=0) so no more than N
+   * embedding requests are ever in flight — required for a GigaChat PERS token,
+   * which 403s a second concurrent stream. A queued call runs the moment a slot
+   * frees, in arrival order.
    */
   async embedBatch(inputs: string[]): Promise<number[][]> {
+    const releaseSlot = await this.concurrency.acquire();
+    try {
+      return await this.embedBatchInner(inputs);
+    } finally {
+      releaseSlot();
+    }
+  }
+
+  /**
+   * The actual request: retry-with-backoff, adaptive 413 truncation, and
+   * circuit breaker per ADR-0005 §3.2/§3.7. NOT concurrency-gated itself —
+   * every caller goes through embedBatch().
+   */
+  private async embedBatchInner(inputs: string[]): Promise<number[][]> {
     const startMs = this.now();
 
     if (!this.breaker.allowRequest()) {

@@ -61,6 +61,14 @@ export interface Config {
      * wasted first over-limit call. 0 = disabled (default).
      */
     maxInputChars?: number;
+    /**
+     * Max number of embedding requests allowed in flight at once. Above this,
+     * calls queue (FIFO) and run as slots free. Needed for providers that cap
+     * concurrency per credential — notably a GigaChat PERS token, which permits
+     * only ONE concurrent stream and returns HTTP 403 when a second overlaps.
+     * 0 = unlimited (default, unchanged behaviour). Set 1 for a PERS token.
+     */
+    maxConcurrency?: number;
   };
   qdrant: {
     url: string;
@@ -210,6 +218,7 @@ export function loadConfig(): Config {
       folderId: process.env['EMBEDDINGS_FOLDER_ID'] || undefined,
       authMethod: process.env['EMBEDDINGS_AUTH_METHOD'] ?? 'API_KEY',
       maxInputChars: clampInt(parseIntEnv('EMBEDDINGS_MAX_INPUT_CHARS', 0), 0, 1_000_000),
+      maxConcurrency: clampInt(parseIntEnv('EMBEDDINGS_MAX_CONCURRENCY', 0), 0, 1_024),
     },
     qdrant: {
       url: process.env['QDRANT_URL'] ?? 'http://localhost:6333',
