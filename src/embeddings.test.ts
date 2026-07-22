@@ -117,6 +117,54 @@ describe('EmbeddingClient.embed', () => {
   });
 });
 
+describe('EmbeddingClient — adaptive truncation on 413', () => {
+  it('shrinks the input and retries when the provider returns 413', async () => {
+    const vec = make4096Vector();
+    const bodies: string[] = [];
+    const fetch = vi.fn<FetchImpl>().mockImplementation((_url, init) => {
+      const input = JSON.parse(String((init as RequestInit).body))['input'] as string[];
+      bodies.push(input[0]);
+      // Emulate GigaChat: 413 until the input is short enough, then 200.
+      return input[0].length > 800
+        ? Promise.resolve(makeErrorResponse(413, 'payload too large'))
+        : Promise.resolve(makeOkResponse([vec]));
+    });
+    const { client, metrics } = makeClient(fetch);
+
+    const result = await client.embed('я'.repeat(5000));
+
+    expect(result).toHaveLength(4096);
+    expect(bodies.length).toBeGreaterThan(1); // it retried
+    expect(bodies[0]).toHaveLength(5000); // first attempt = full input
+    expect(bodies[bodies.length - 1].length).toBeLessThanOrEqual(800); // last = shrunk enough
+    expect(metrics.calls['failure']).toBe(0); // a fixable 413 is not a fatal failure
+  });
+
+  it('applies the static maxInputChars cap before the first request', async () => {
+    const vec = make4096Vector();
+    let firstLen = -1;
+    const fetch = vi.fn<FetchImpl>().mockImplementation((_url, init) => {
+      const input = JSON.parse(String((init as RequestInit).body))['input'] as string[];
+      if (firstLen < 0) firstLen = input[0].length;
+      return Promise.resolve(makeOkResponse([vec]));
+    });
+    const { client } = makeClient(fetch, { maxInputChars: 100 });
+
+    await client.embed('x'.repeat(5000));
+
+    expect(firstLen).toBe(100);
+  });
+
+  it('still throws a 413 when truncation bottoms out at the floor', async () => {
+    const fetch = vi.fn<FetchImpl>().mockImplementation(() => Promise.resolve(makeErrorResponse(413, 'too large')));
+    const { client } = makeClient(fetch);
+
+    await expect(client.embed('я'.repeat(5000))).rejects.toSatisfy(
+      (e: unknown) => e instanceof EmbeddingHttpError && (e as EmbeddingHttpError).status === 413,
+    );
+  });
+});
+
 describe('EmbeddingClient — dimension validation', () => {
   it('throws EmbeddingDimensionError when response has wrong dimensions', async () => {
     const shortVec = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]; // 8 dims

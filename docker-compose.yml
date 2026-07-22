@@ -97,6 +97,10 @@ services:
       EMBEDDINGS_DIMENSION:
       EMBEDDINGS_FOLDER_ID:
       EMBEDDINGS_AUTH_METHOD:
+      # Static char cap for providers with no server-side auto-truncation
+      # (GigaChat). The client also adaptively truncates on a 413; this just
+      # skips the wasted first over-limit call. 0/unset = disabled.
+      EMBEDDINGS_MAX_INPUT_CHARS:
       # Extra TLS trust anchor — the Минцифры root for GigaChat, baked into the
       # image at /app/certs (Dockerfile COPYs certs/, see certs/README.md).
       # Set NODE_EXTRA_CA_CERTS=/app/certs/russian_trusted_root_ca.pem in .env.
