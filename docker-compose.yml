@@ -86,6 +86,21 @@ services:
       EMBEDDINGS_API_KEY:
       EMBEDDINGS_BASE_URL: ${EMBEDDINGS_BASE_URL:-https://openrouter.ai/api/v1}
       EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-qwen/qwen3-embedding-8b}
+      # Provider-specific knobs (GigaChat / Yandex). Bare pass-throughs: the
+      # value is forwarded into the container only when set in the host env /
+      # .env, so the CD `up -d mcp` — which runs with just base+prod, no
+      # provider overlay — preserves them across every redeploy. Without this,
+      # a gigachat/yandex box would silently revert to the openai defaults on
+      # the next deploy. Defaults live in src/config.ts.
+      EMBEDDINGS_PROVIDER:
+      EMBEDDINGS_SCOPE:
+      EMBEDDINGS_DIMENSION:
+      EMBEDDINGS_FOLDER_ID:
+      EMBEDDINGS_AUTH_METHOD:
+      # Extra TLS trust anchor — the Минцифры root for GigaChat, baked into the
+      # image at /app/certs (Dockerfile COPYs certs/, see certs/README.md).
+      # Set NODE_EXTRA_CA_CERTS=/app/certs/russian_trusted_root_ca.pem in .env.
+      NODE_EXTRA_CA_CERTS:
       # Admin console (ADR-0008) — OFF by default. Set ADMIN_ENABLED=true in .env
       # to start the operator console on :8081. Binds 0.0.0.0 inside the
       # container; host isolation is the loopback publish above.
