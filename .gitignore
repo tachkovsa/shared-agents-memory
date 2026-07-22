@@ -16,3 +16,6 @@ data/
 
 # Local scratch — analysis notes, internal strategy. Never committed.
 temp/
+
+# Design screenshots — generated locally, not tracked.
+design/screenshots/

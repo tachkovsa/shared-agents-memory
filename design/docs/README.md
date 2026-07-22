@@ -2,7 +2,7 @@
 
 ## Overview
 
-**ArtelMemory** — общая память для AI-агентов (shared memory for AI agents), distributed open-source with a managed cloud option ($5/mo). Focused on CIS markets (first: Kyrgyzstan, Russia), Russian-language UI, local LLM/embeddings, data staying inside the user's contour.
+**ArtelMemory** — общая память для AI-агентов (shared memory for AI agents), distributed open-source with a managed cloud option (300₽/mo). Focused on CIS markets (first: Kyrgyzstan, Russia), Russian-language UI, local LLM/embeddings, data staying inside the user's contour.
 
 This bundle contains two design references:
 
@@ -80,10 +80,10 @@ Single-column, dark hero on cream page. Sticky translucent dark nav. Sections in
 7. **Core Jobs** — 2 "job" cards with numbered steps (восстановить контекст / единый контекст с командой).
 8. **Objections** (cream) — 3 honest Q&A (данные за рубеж / вендор-лок / сложно настраивать).
 9. **Compare** — table: claude-mem & аналоги / DIY свой сервер / «память» в чатах — vs ArtelMemory.
-10. **Pricing** — 2 plans: **Self-hosted — Бесплатно** (open-source) and **ArtelMemory Cloud — $5/мес** (managed, recommended). Note: subscription just covers infra cost.
+10. **Pricing** — 2 plans: **Self-hosted — Бесплатно** (open-source) and **ArtelMemory Cloud — 300₽/мес** (managed, recommended). Note: subscription just covers infra cost.
 11. **Final CTA** (dark) + **Footer** (dark).
 
-**Key copy decisions (from user):** local model only (do **not** name YandexGPT/GigaChat); no fake testimonials; agents named are Claude Code, Codex, Kimi, GLM, OpenClaw, Hermes + "любой клиент с MCP"; pricing = free self-host vs $5 managed cloud; angle = "без своего сервера, сертификатов и mTLS".
+**Key copy decisions (from user):** local model only (do **not** name YandexGPT/GigaChat); no fake testimonials; agents named are Claude Code, Codex, Kimi, GLM, OpenClaw, Hermes + "любой клиент с MCP"; pricing = free self-host vs 300₽ managed cloud; angle = "без своего сервера, сертификатов и mTLS".
 
 **Motion:** hero load = transform-only rise (opacity stays 1 so content is never hidden if transitions stall); scroll-reveal via IntersectionObserver adding `.in` (also transform-only). Respects `prefers-reduced-motion`. A 1.6s safety timeout force-reveals everything. **Keep this defensiveness** — never gate content visibility on an animation completing.
 
@@ -103,7 +103,7 @@ React 18 SPA. App shell = **persistent dark sidebar** (248px) + main column (top
 | `rules` | **Правила** | 6 rule cards (validation/lifecycle/security/access) with enable toggles |
 | `audit` | **Аудит** | Filterable table (all / agents / humans / denied) — action, actor (human vs agent), target, ns, IP, time, result |
 | `observability` | **Observability** | 4 stat cards, 3 line charts (searches/writes/latency), service-health list |
-| `billing` | **Подписка** | Active $5 Cloud plan card, "what's included", free self-host card |
+| `billing` | **Подписка** | Active 300₽ Cloud plan card, "what's included", free self-host card |
 | — | **Login** | Split layout: form (email/pass/GitHub) + dark brand art panel |
 
 ### Interactions & behaviour

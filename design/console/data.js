@@ -5,7 +5,7 @@
     email: "artem@artelmemory.dev",
     initials: "АК",
     org: "Artel Memory · CIS",
-    plan: "Cloud · $5/мес",
+    plan: "Cloud · 300₽/мес",
     region: "kg-bishkek-1",
   };
 

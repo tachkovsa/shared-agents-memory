@@ -61,7 +61,7 @@ function Sidebar({ route, go, theme, setTheme }) {
       <div className="sb-foot">
         <div className="sb-plan">
           <span className="ic"><Ic n="cloud" b /></span>
-          <div className="t"><b>Cloud · $5/мес</b><span>{op.region}</span></div>
+          <div className="t"><b>Cloud · 300₽/мес</b><span>{op.region}</span></div>
           <button className="theme-toggle" style={{ marginLeft: "auto" }} title="Подписка" onClick={() => go("billing")}><Ic n="arrow-up-right" /></button>
         </div>
         <div className="sb-user">

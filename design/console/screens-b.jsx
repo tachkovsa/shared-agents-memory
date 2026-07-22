@@ -274,7 +274,7 @@ function BillingScreen() {
           </div>
           <div className="divider" />
           <div className="row" style={{ alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontFamily: "var(--font-head)", fontWeight: 800, fontSize: 38, letterSpacing: "-.02em" }}>$5</span>
+            <span style={{ fontFamily: "var(--font-head)", fontWeight: 800, fontSize: 38, letterSpacing: "-.02em" }}>300₽</span>
             <span className="muted">/ месяц</span>
           </div>
           <p className="muted" style={{ fontSize: 13, marginTop: 6 }}>Следующее списание — 1 июля 2026. Без тарифной матрицы и апсейлов.</p>
