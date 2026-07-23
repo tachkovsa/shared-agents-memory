@@ -1,7 +1,0 @@
-{
-  "daemonUrl": "http://127.0.0.1:7456",
-  "projectName": "Artel Memory",
-  "projectType": "web",
-  "cwd": "design/",
-  "description": "Shared memory for AI agents — landing + operator console"
-}
