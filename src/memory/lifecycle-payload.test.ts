@@ -60,6 +60,22 @@ describe('lifecycle payload round-trip', () => {
     expect(m.verifiesAgainst).toBeNull();
   });
 
+  it('does not emit a dead expires_at key and ignores a stray one (C4/C2 #110)', () => {
+    // C2 (#110): `expires_at` had no producer (nothing ever set it) and no
+    // sweeper (the decay/staleness sweeps never read it), so the dead field was
+    // removed. The mapper must not write it, and a legacy payload carrying one
+    // must round-trip cleanly without resurrecting the field.
+    const payload = memoryToPayload(base);
+    expect(payload).not.toHaveProperty('expires_at');
+
+    const round = payloadToMemory(base.id, {
+      ...memoryToPayload(base),
+      expires_at: '2030-01-01T00:00:00.000Z',
+    });
+    expect(round).not.toHaveProperty('expiresAt');
+    expect(round).toEqual(base);
+  });
+
   it('drops a malformed verifies_against rather than throwing', () => {
     const m = payloadToMemory('id-2', {
       namespace: 'personal',

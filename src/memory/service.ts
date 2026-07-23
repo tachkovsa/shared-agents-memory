@@ -205,9 +205,14 @@ export class MemoryService {
   /**
    * Semantic search with lifecycle filtering + decay re-rank (ADR-0006 §3.4/§3.5).
    *
-   * Qdrant null-filtering is awkward, so we over-fetch (`limit * 3`, min 30),
-   * decode, drop soft-deleted (always) and superseded (unless `includeSuperseded`)
-   * points in code, then re-rank by blending cosine with the point's decay_score:
+   * C4 (#110) — the lifecycle filters are pushed into the Qdrant query as
+   * `is_null` conditions (which match null-or-missing, so live/legacy points pass
+   * and tombstoned/superseded ones are excluded server-side). This guarantees the
+   * over-fetch (`limit * 3`, min 30) returns up to `fetchLimit` *matching* points,
+   * so a full page of `limit` is returned whenever that many matching records
+   * exist — previously the post-filter could drop the page below `limit`. The
+   * in-code filter below is kept as defense-in-depth (and to cover the decay
+   * re-rank pool). Ranking blends cosine with decay_score:
    * `ranked = cosine*(1-w) + cosine*decay*w`, sort desc, truncate to `limit`.
    */
   async search(input: SearchMemoryInput): Promise<SearchResult[]> {
@@ -217,7 +222,13 @@ export class MemoryService {
     const must: Array<Record<string, unknown>> = [
       { key: 'namespace', match: { value: input.namespace } },
       { key: 'kind', match: { value: MEMORY_KIND } },
+      // C4 (#110) — exclude soft-deleted tombstones server-side (always) and
+      // superseded points (unless opted in) so the fetched window is all matches.
+      { is_null: { key: 'deleted_at' } },
     ];
+    if (!input.includeSuperseded) {
+      must.push({ is_null: { key: 'superseded_by' } });
+    }
 
     if (input.tags && input.tags.length > 0) {
       for (const tag of input.tags) {
@@ -265,19 +276,29 @@ export class MemoryService {
    * Qdrant `scroll` (no vector) filtered by namespace + kind; soft-deleted points
    * are excluded unless `includeDeleted`. The returned `nextCursor` is the opaque
    * Qdrant page offset — pass it back to fetch the next page (null when done).
+   *
+   * C4 (#110) — the `deleted_at IS NULL` exclusion is pushed into the scroll
+   * filter (as an `is_null` condition matching null-or-missing) rather than
+   * post-filtering the fetched page. That keeps two invariants that the old
+   * post-filter broke: each page holds a full `limit` of live records when that
+   * many remain, and `next_page_offset` reflects the *filtered* stream, so the
+   * returned cursor is null only at true exhaustion (never a short page with a
+   * dangling cursor). The in-code filter is retained as defense-in-depth.
    */
   async list(input: ListMemoryInput): Promise<ListMemoryResult> {
     const limit = Math.min(
       Math.max(1, Math.floor(input.limit ?? MEMORY_LIST_DEFAULT_LIMIT)),
       MEMORY_LIST_MAX_LIMIT,
     );
+    const must: Array<Record<string, unknown>> = [
+      { key: 'namespace', match: { value: input.namespace } },
+      { key: 'kind', match: { value: MEMORY_KIND } },
+    ];
+    if (!input.includeDeleted) {
+      must.push({ is_null: { key: 'deleted_at' } });
+    }
     const result = await this.qdrant.scroll(this.collection, {
-      filter: {
-        must: [
-          { key: 'namespace', match: { value: input.namespace } },
-          { key: 'kind', match: { value: MEMORY_KIND } },
-        ],
-      },
+      filter: { must },
       limit,
       offset: input.cursor ?? undefined,
       with_payload: true,
@@ -696,7 +717,6 @@ export function memoryToPayload(memory: MemoryRecord): Record<string, unknown> {
     deleted_by: memory.deletedBy ?? null,
     staleness_signal: memory.stalenessSignal ?? 'unverified',
     verifies_against: verifiesAgainstToPayload(memory.verifiesAgainst),
-    ...(memory.expiresAt ? { expires_at: memory.expiresAt } : {}),
   };
 }
 
@@ -743,7 +763,6 @@ export function payloadToMemory(
     source: (payload['source'] as string) || undefined,
     createdAt: payload['created_at'] as string,
     updatedAt: payload['updated_at'] as string,
-    expiresAt: (payload['expires_at'] as string) || undefined,
     retrievalCount: (payload['retrieval_count'] as number) ?? 0,
     lastRetrievedAt: (payload['last_retrieved_at'] as string | null) ?? null,
     // ADR-0006 §3.1 lifecycle fields — default for pre-#27 points.

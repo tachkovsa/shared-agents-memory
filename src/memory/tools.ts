@@ -5,7 +5,7 @@ import { AuthError, type RequestContext } from '../auth/request-context.js';
 import { authorizeNamespaceAccess } from '../auth/resolve-request.js';
 import type { AgentPat, AgentScope } from '../auth/types.js';
 import { quotaRejectionsTotal } from '../metrics/registry.js';
-import { loadNamespace } from '../namespaces/store.js';
+import { loadNamespace, namespaceIdSchema } from '../namespaces/store.js';
 import { QuotaExceededError, type QuotaService } from '../quota/quota-service.js';
 import type { ReinforcementBuffer } from './reinforcement.js';
 import { MemoryNotFoundError, MemoryService, MemoryValidationError } from './service.js';
@@ -129,7 +129,8 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
     'memory_store',
     'Store an episodic memory in the shared agent memory. Returns the stored memory record.',
     {
-      namespace: z.string().describe('Namespace to scope this memory'),
+      // N3 (#110) — same canonical namespace-id validator as the namespace/rule tools.
+      namespace: namespaceIdSchema.describe('Namespace to scope this memory'),
       content: z
         .string()
         .min(1)
@@ -287,7 +288,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
     'memory_search',
     'Search shared episodic memory by semantic similarity with optional tag filters.',
     {
-      namespace: z.string().describe('Namespace to search in'),
+      namespace: namespaceIdSchema.describe('Namespace to search in'),
       query: z.string().min(1).describe('Search query text'),
       limit: z
         .number()
@@ -356,7 +357,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
     'memory_get',
     'Retrieve a specific episodic memory by ID within a namespace.',
     {
-      namespace: z.string().describe('Namespace the memory belongs to'),
+      namespace: namespaceIdSchema.describe('Namespace the memory belongs to'),
       id: z.string().uuid().describe('Memory ID'),
     },
     async (input) => {
@@ -380,7 +381,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
     'memory_update_metadata',
     'Update an existing episodic memory\'s metadata, tags, summary, or source without re-embedding the content.',
     {
-      namespace: z.string().describe('Namespace the memory belongs to'),
+      namespace: namespaceIdSchema.describe('Namespace the memory belongs to'),
       id: z.string().uuid().describe('Memory ID'),
       summary: z
         .string()
@@ -436,7 +437,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
       'restorable via memory_restore (issue #105 / SEC-4). Hard purge is ' +
       'reserved for the operator console.',
     {
-      namespace: z.string().describe('Namespace the memory belongs to'),
+      namespace: namespaceIdSchema.describe('Namespace the memory belongs to'),
       id: z.string().uuid().describe('Memory ID to delete'),
     },
     async (input) => {
@@ -465,7 +466,7 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
     'memory_restore',
     'Restore a soft-deleted (decayed-out) episodic memory by clearing its tombstone (ADR-0006 §3.4).',
     {
-      namespace: z.string().describe('Namespace the memory belongs to'),
+      namespace: namespaceIdSchema.describe('Namespace the memory belongs to'),
       id: z.string().uuid().describe('Memory ID to restore'),
     },
     async (input) => {
