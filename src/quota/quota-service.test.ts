@@ -273,3 +273,63 @@ describe('QuotaService.reserve — atomic check-and-consume', () => {
     );
   });
 });
+
+describe('QuotaService.release — compensating refund (issue #109)', () => {
+  it('refunds a reservation: counters return to the pre-reserve state', async () => {
+    const svc = new QuotaService({ dataDir });
+    const quota = makeQuota({ daily_writes: 1, daily_embedding_tokens: 5 });
+
+    // Reserve one write + 5 tokens — this fills the cap exactly.
+    await svc.reserve('test-ns', 'write', { quota, estimatedTokens: 5 });
+    await expect(svc.reserve('test-ns', 'write', { quota, estimatedTokens: 5 })).rejects.toBeInstanceOf(
+      QuotaExceededError,
+    );
+
+    // Refund it — writes back to 0 and embedding_tokens back to 0.
+    await svc.release('test-ns', 'write', { estimatedTokens: 5 });
+
+    // The budget is fully available again: a fresh reserve at the same tight cap
+    // succeeds, which is only possible if both counters were decremented.
+    await expect(
+      svc.reserve('test-ns', 'write', { quota, estimatedTokens: 5 }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('is idempotent and clamps at 0 — a double refund never drives counters negative', async () => {
+    const svc = new QuotaService({ dataDir });
+    const quota = makeQuota({ daily_writes: 1, daily_embedding_tokens: 5 });
+
+    await svc.reserve('test-ns', 'write', { quota, estimatedTokens: 5 });
+
+    // Refund twice. With only one reservation outstanding, the second refund must
+    // clamp at 0 rather than making the counters negative.
+    await svc.release('test-ns', 'write', { estimatedTokens: 5 });
+    await svc.release('test-ns', 'write', { estimatedTokens: 5 });
+
+    // If the second refund had gone negative, a subsequent reserve of 2 writes /
+    // 10 tokens against a cap of 1 write / 5 tokens might slip through. It must
+    // still enforce exactly one write + 5 tokens of headroom.
+    await expect(
+      svc.reserve('test-ns', 'write', { quota, estimatedTokens: 5 }),
+    ).resolves.toBeUndefined();
+    await expect(
+      svc.reserve('test-ns', 'write', { quota, estimatedTokens: 5 }),
+    ).rejects.toBeInstanceOf(QuotaExceededError);
+  });
+
+  it('clamps at 0 when releasing with no prior reservation', async () => {
+    const svc = new QuotaService({ dataDir });
+    const quota = makeQuota({ daily_writes: 1, daily_embedding_tokens: 5 });
+
+    // No reserve first — release must not underflow into negative usage.
+    await svc.release('test-ns', 'write', { estimatedTokens: 5 });
+
+    // Usage stayed at 0: exactly one reserve fits, a second does not.
+    await expect(
+      svc.reserve('test-ns', 'write', { quota, estimatedTokens: 5 }),
+    ).resolves.toBeUndefined();
+    await expect(
+      svc.reserve('test-ns', 'write', { quota, estimatedTokens: 5 }),
+    ).rejects.toBeInstanceOf(QuotaExceededError);
+  });
+});
