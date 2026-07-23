@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { purgeNamespaceVectors, type NamespaceVectorPurger } from './vector-cascade.js';
 import type { AuthAuditWriter } from '../auth/audit.js';
 import {
   canonicalJsonHash,
@@ -36,6 +37,14 @@ export interface NamespaceToolDeps {
   sessionId: string;
   pepper: Buffer;
   dataDir: string;
+  /**
+   * Qdrant client + collection so `namespace_delete` can cascade a
+   * namespace-filtered vector purge (issue #102). Threaded from the same
+   * composition root that builds MemoryService; kept to the minimal `delete`
+   * surface so tests can stub it.
+   */
+  qdrant: NamespaceVectorPurger;
+  collection: string;
   consumed?: ConsumedConfirmations;
   confirmationTtlMs?: number;
   now?: () => Date;
@@ -187,6 +196,8 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
     sessionId,
     pepper,
     dataDir,
+    qdrant,
+    collection,
     consumed = new ConsumedConfirmations(deps.now),
     confirmationTtlMs = DEFAULT_CONFIRMATION_TTL_MS,
     now = () => new Date(),
@@ -671,13 +682,34 @@ export function registerNamespaceTools(server: McpServer, deps: NamespaceToolDep
 
       try {
         const deletedPath = await softDeleteNamespace(dataDir, input.id, now().getTime());
+
+        // Cascade a namespace-filtered Qdrant purge so the tenant's vectors are
+        // physically removed, not just access-gated by the moved directory
+        // (issue #102 — the privacy/account-deletion promise). Best-effort: the
+        // directory now lives under _deleted/, so `sweepOrphanedNamespaceVectors`
+        // is the guaranteed backstop if this immediate purge fails (e.g. Qdrant
+        // is transiently down). We never report vectors gone unless they are.
+        let vectorsPurged = true;
+        try {
+          await purgeNamespaceVectors(qdrant, collection, input.id);
+        } catch (purgeErr) {
+          vectorsPurged = false;
+          await auditor.record('namespace.vector_purge_failed', {
+            namespace_id: input.id,
+            error: purgeErr instanceof Error ? purgeErr.message : String(purgeErr),
+          });
+        }
+
         await recordAuthSuccess('namespace_delete', 'service:admin');
         return jsonResponse({
           namespace_id: input.id,
           deleted: true,
           moved_to: deletedPath,
           grace_days: 30,
-          note: 'Namespace soft-deleted. Hard delete after 30-day grace period is a manual ops task.',
+          vectors_purged: vectorsPurged,
+          note: vectorsPurged
+            ? 'Namespace soft-deleted and its vectors purged from Qdrant. Hard delete of the directory after the 30-day grace period is a manual ops task.'
+            : 'Namespace soft-deleted, but the immediate Qdrant vector purge failed. The orphan sweep will retry it. Hard delete of the directory after the 30-day grace period is a manual ops task.',
         });
       } catch (err) {
         if (err instanceof NamespaceNotFoundError) return notFoundResponse(input.id);
