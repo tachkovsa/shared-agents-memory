@@ -549,6 +549,14 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
     }
 
     // ── Session routing ───────────────────────────────────────────────────────
+    // Every routed request (POST/GET/DELETE against an existing session) must be
+    // presented by the *same* PAT that opened the session — we require
+    // `rec.pat.id === pat.id` at all three call sites below (issue #104, SEC-3).
+    // The per-request `resolvePat` above already re-evaluates the bearer against
+    // the store on every request (short cache TTL, invalidated on revoke), so a
+    // revoked/expired token is rejected with 401 here before routing; combined
+    // with the id check, revoking a PAT immediately kills its live session and no
+    // other valid token can hijack a leaked session id.
     const sessionIdHeader = req.headers['mcp-session-id'] as string | undefined;
 
     // GET requests open SSE streams and must reference an existing session.
@@ -562,6 +570,11 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
       if (!rec) {
         httpRequestsTotal.inc({ outcome: 'session_expired' });
         sendJson(res, 404, { error: 'MCP_SESSION_EXPIRED', message: 'Session not found or expired' });
+        return;
+      }
+      if (rec.pat.id !== pat.id) {
+        httpRequestsTotal.inc({ outcome: 'session_pat_mismatch' });
+        sendJson(res, 403, { error: 'MCP_SESSION_FORBIDDEN', message: 'Session is bound to a different token' });
         return;
       }
       rec.lastActivityAt = Date.now();
@@ -586,6 +599,11 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
         sendJson(res, 404, { error: 'MCP_SESSION_EXPIRED', message: 'Session not found or expired' });
         return;
       }
+      if (rec.pat.id !== pat.id) {
+        httpRequestsTotal.inc({ outcome: 'session_pat_mismatch' });
+        sendJson(res, 403, { error: 'MCP_SESSION_FORBIDDEN', message: 'Session is bound to a different token' });
+        return;
+      }
       rec.lastActivityAt = Date.now();
       httpRequestsTotal.inc({ outcome: '2xx' });
       await rec.transport.handleRequest(req, res);
@@ -598,6 +616,11 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
       if (!rec) {
         httpRequestsTotal.inc({ outcome: 'session_expired' });
         sendJson(res, 404, { error: 'MCP_SESSION_EXPIRED', message: 'Session not found or expired' });
+        return;
+      }
+      if (rec.pat.id !== pat.id) {
+        httpRequestsTotal.inc({ outcome: 'session_pat_mismatch' });
+        sendJson(res, 403, { error: 'MCP_SESSION_FORBIDDEN', message: 'Session is bound to a different token' });
         return;
       }
 
