@@ -153,8 +153,12 @@ export function registerMemoryAdminRoutes(
   );
 }
 
-/** Operator-facing projection of a memory record (no secrets in episodic memory). */
-function view(m: MemoryRecord) {
+/**
+ * Operator-facing projection of a memory record (no secrets in episodic memory).
+ * Exported so the namespace-export route emits the exact same field set as the
+ * console memory browser (no divergent projection, no leaked internals).
+ */
+export function view(m: MemoryRecord) {
   return {
     id: m.id,
     namespace: m.namespace,
