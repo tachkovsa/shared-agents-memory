@@ -35,7 +35,11 @@ export const httpSessionsActive = new Gauge({
 /**
  * Total HTTP requests by outcome.
  * outcome ∈ 2xx | 4xx | 5xx | auth_failure | origin_mismatch |
- *           session_expired | inflight_limit | session_limit
+ *           session_expired | session_pat_mismatch | inflight_limit |
+ *           session_limit | rate_limited
+ *
+ * `rate_limited` is emitted by the per-IP auth-failure limiter (issue #108) —
+ * a sustained non-zero rate signals a CPU auth-flood; operators should alert.
  */
 export const httpRequestsTotal = new Counter({
   name: 'mem_http_requests_total',

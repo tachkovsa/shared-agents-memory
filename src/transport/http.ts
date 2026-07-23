@@ -57,6 +57,7 @@ import { initCollection, quantizationSearchParams } from '../qdrant.js';
 import { QuotaService } from '../quota/quota-service.js';
 import { registerRuleTools } from '../rules/index.js';
 import { omitDefaultForbiddenToolExecution } from './codex-compat.js';
+import { AuthFailureLimiter } from './auth-rate-limit.js';
 
 // ── Error types ──────────────────────────────────────────────────────────────
 
@@ -116,6 +117,19 @@ export interface HttpTransportDeps {
 function looksLikeJwt(value: string): boolean {
   // JWT header always base64-encodes to "eyJ..."
   return /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/.test(value.trim());
+}
+
+/**
+ * Client IP used to key the per-IP auth-failure limiter (issue #108).
+ *
+ * We deliberately use the raw socket peer address and do NOT trust
+ * `X-Forwarded-For`: nothing else in this transport consults proxy headers, and
+ * honouring an attacker-settable XFF would let a flood evade the limit by
+ * rotating the header. When deployed behind a reverse proxy, terminate it on the
+ * loopback so `req.socket.remoteAddress` stays the stable per-peer value.
+ */
+function clientIpFor(req: IncomingMessage): string {
+  return req.socket.remoteAddress ?? 'unknown';
 }
 
 function sendJson(
@@ -346,6 +360,16 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
 
   const sessions = new Map<string, SessionRecord>();
 
+  // ── Per-IP auth-failure rate limiter (issue #108, SEC-7) ─────────────────────
+  // Sliding window of failed /mcp auths per client IP; trips 429 before the
+  // expensive PAT resolution runs. In-memory, swept periodically to bound memory.
+  const authFailureLimiter = new AuthFailureLimiter({
+    max: http.authFailureMax,
+    windowMs: http.authFailureWindowMs,
+  });
+  const authLimiterSweepInterval = setInterval(() => authFailureLimiter.sweep(), 60_000);
+  authLimiterSweepInterval.unref();
+
   function removeSession(sessionId: string): void {
     const rec = sessions.get(sessionId);
     if (rec) {
@@ -519,9 +543,27 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
     // MCP clients can read them (no-op for header-less CLI clients).
     applyMcpCorsHeaders(res, origin, http.publicOrigin);
 
+    // ── Per-IP auth-failure rate limit (issue #108, SEC-7) ───────────────────
+    // Checked BEFORE any PAT resolution: once an IP has racked up too many failed
+    // auths inside the window, short-circuit with 429 so the HMAC never runs.
+    // Only failed auths count toward the limit; a success clears the counter
+    // (see recordSuccess below), so honest clients are never penalised.
+    const clientIp = clientIpFor(req);
+    const rateDecision = authFailureLimiter.check(clientIp);
+    if (rateDecision.limited) {
+      httpRequestsTotal.inc({ outcome: 'rate_limited' });
+      res.setHeader('Retry-After', String(rateDecision.retryAfterSec));
+      sendJson(res, 429, {
+        error: 'MCP_AUTH_RATE_LIMITED',
+        message: `Too many failed auth attempts; retry after ${rateDecision.retryAfterSec}s`,
+      });
+      return;
+    }
+
     // ── Authorization ────────────────────────────────────────────────────────
     const authHeader = req.headers['authorization'];
     if (!authHeader) {
+      authFailureLimiter.recordFailure(clientIp);
       httpRequestsTotal.inc({ outcome: 'auth_failure' });
       authFailuresTotal.inc({ reason: 'missing' });
       sendJson(res, 401, { error: 'MCP_UNAUTHORIZED', message: 'Authorization header required' });
@@ -533,6 +575,7 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
     const rawSecret = bearerMatch ? bearerMatch[1].trim() : '';
 
     if (!rawSecret) {
+      authFailureLimiter.recordFailure(clientIp);
       httpRequestsTotal.inc({ outcome: 'auth_failure' });
       authFailuresTotal.inc({ reason: 'malformed' });
       sendJson(res, 401, { error: 'MCP_UNAUTHORIZED', message: 'Bearer token missing' });
@@ -540,6 +583,7 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
     }
 
     if (looksLikeJwt(rawSecret)) {
+      authFailureLimiter.recordFailure(clientIp);
       httpRequestsTotal.inc({ outcome: 'auth_failure' });
       authFailuresTotal.inc({ reason: 'malformed' });
       sendJson(res, 401, { error: 'MCP_TOKEN_AUDIENCE_MISMATCH', message: 'JWT credentials are not accepted; use a sam_pat_* token' });
@@ -550,8 +594,12 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
     try {
       pat = resolvePat(patStore, rawSecret);
       patLookupsTotal.inc({ outcome: 'success' });
+      // A successful auth clears this IP's failure history (issue #108) so a
+      // legitimate client is never throttled for earlier failures or noise.
+      authFailureLimiter.recordSuccess(clientIp);
     } catch (err) {
       if (err instanceof AuthError) {
+        authFailureLimiter.recordFailure(clientIp);
         patLookupsTotal.inc({ outcome: err.reason });
         httpRequestsTotal.inc({ outcome: 'auth_failure' });
         authFailuresTotal.inc({ reason: err.reason });
@@ -769,6 +817,7 @@ export async function runHttpTransport(deps: HttpTransportDeps): Promise<void> {
     const shutdown = () => {
       clearInterval(idleSweepInterval);
       clearInterval(keepaliveInterval);
+      clearInterval(authLimiterSweepInterval);
       clearInterval(memCountRefreshInterval);
       clearInterval(patCountRefreshInterval);
       void reinforcement.stop();
