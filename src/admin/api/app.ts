@@ -14,6 +14,7 @@ import { makeOrphanPruneCallback } from '../../namespaces/tools.js';
 import { registerAuditAdminRoutes } from './routes/audit.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerBillingRoutes } from './routes/billing.js';
+import { registerExportAdminRoutes } from './routes/export.js';
 import { registerMemoryAdminRoutes } from './routes/memories.js';
 import { registerNamespaceAdminRoutes } from './routes/namespaces.js';
 import { registerObservabilityRoutes } from './routes/observability.js';
@@ -58,6 +59,8 @@ export interface AdminAppOptions {
   qdrant?: QdrantClient;
   /** Qdrant collection the memories live in — required alongside `qdrant` for purge. */
   collection?: string;
+  /** Injected clock for the namespace-export timestamp (manifest + filename). Tests pass a fixed clock. */
+  now?: () => Date;
   /** Enables the observability summary route (health + counts + metrics); needs dataDir. */
   observability?: {
     qdrant: QdrantClient;
@@ -128,6 +131,18 @@ export async function createAdminApp(opts: AdminAppOptions): Promise<FastifyInst
       dataDir: opts.dataDir,
       requireAuth,
     });
+    // Operator-only per-namespace export (FEAT-1, #111). Needs the shared auditor
+    // (guaranteed defined here — it's built whenever dataDir is set) to record the
+    // `namespace.exported` receipt after the stream completes.
+    if (auditor) {
+      registerExportAdminRoutes(app, {
+        memoryService: opts.memoryService,
+        dataDir: opts.dataDir,
+        requireAuth,
+        auditor,
+        now: opts.now,
+      });
+    }
   }
 
   if (opts.observability && opts.dataDir) {
