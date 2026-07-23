@@ -497,6 +497,136 @@ describe('Session lifecycle', () => {
   });
 });
 
+describe('Session ↔ PAT binding (issue #104, SEC-3)', () => {
+  let server: TestServer;
+
+  beforeEach(async () => {
+    server = await startTestServer();
+  });
+
+  afterEach(async () => {
+    await server.stop();
+  });
+
+  /** Opens a session with the fixture PAT and returns its Mcp-Session-Id. */
+  async function openSession(): Promise<string> {
+    const initRes = await httpRequest(
+      `${server.baseUrl}/mcp`,
+      'POST',
+      { Authorization: `Bearer ${server.patSecret}` },
+      mcpInitializeBody(),
+    );
+    expect(initRes.status).toBe(200);
+    const sessionId = initRes.headers['mcp-session-id'];
+    expect(sessionId).toBeTruthy();
+    return sessionId!;
+  }
+
+  it('rejects a POST to a session with a valid bearer whose PAT id differs (403)', async () => {
+    const sessionId = await openSession();
+
+    // A second, entirely valid low-priv PAT — proves "some valid token" is not
+    // enough; the session is bound to the PAT that opened it.
+    const other = await server.patStore.mint({
+      display_name: 'other-agent',
+      agent_identity: 'agent_other',
+      allowed_namespaces: ['personal'],
+      scopes: ['memory:read'],
+      created_by: 'test',
+    });
+    expect(other.pat.id).not.toBe(server.pat.id);
+
+    const res = await httpRequest(
+      `${server.baseUrl}/mcp`,
+      'POST',
+      {
+        Authorization: `Bearer ${other.secret}`,
+        'Mcp-Session-Id': sessionId,
+      },
+      { jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} },
+    );
+    expect(res.status).toBe(403);
+    expect((res.body as Record<string, unknown>)['error']).toBe('MCP_SESSION_FORBIDDEN');
+  });
+
+  it('rejects a GET (SSE) to a session opened by a different PAT (403)', async () => {
+    const sessionId = await openSession();
+    const other = await server.patStore.mint({
+      display_name: 'other-agent-get',
+      agent_identity: 'agent_other_get',
+      allowed_namespaces: ['personal'],
+      scopes: ['memory:read'],
+      created_by: 'test',
+    });
+
+    const res = await httpRequest(
+      `${server.baseUrl}/mcp`,
+      'GET',
+      {
+        Authorization: `Bearer ${other.secret}`,
+        'Mcp-Session-Id': sessionId,
+      },
+    );
+    expect(res.status).toBe(403);
+    expect((res.body as Record<string, unknown>)['error']).toBe('MCP_SESSION_FORBIDDEN');
+  });
+
+  it('rejects a DELETE to a session opened by a different PAT (403)', async () => {
+    const sessionId = await openSession();
+    const other = await server.patStore.mint({
+      display_name: 'other-agent-del',
+      agent_identity: 'agent_other_del',
+      allowed_namespaces: ['personal'],
+      scopes: ['memory:read'],
+      created_by: 'test',
+    });
+
+    const res = await httpRequest(
+      `${server.baseUrl}/mcp`,
+      'DELETE',
+      {
+        Authorization: `Bearer ${other.secret}`,
+        'Mcp-Session-Id': sessionId,
+      },
+    );
+    expect(res.status).toBe(403);
+    expect((res.body as Record<string, unknown>)['error']).toBe('MCP_SESSION_FORBIDDEN');
+  });
+
+  it('denies a live session after its own PAT is revoked (401, no longer routed)', async () => {
+    const sessionId = await openSession();
+
+    // Sanity: the session is usable before revocation.
+    const before = await httpRequest(
+      `${server.baseUrl}/mcp`,
+      'POST',
+      {
+        Authorization: `Bearer ${server.patSecret}`,
+        'Mcp-Session-Id': sessionId,
+      },
+      { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+    );
+    expect(before.status).toBe(200);
+
+    // Revoke the PAT that owns the session (incident response).
+    await server.patStore.revoke(server.pat.id, 'leaked');
+
+    // The same bearer + session id must now be rejected at auth resolution.
+    const after = await httpRequest(
+      `${server.baseUrl}/mcp`,
+      'POST',
+      {
+        Authorization: `Bearer ${server.patSecret}`,
+        'Mcp-Session-Id': sessionId,
+      },
+      { jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} },
+    );
+    expect(after.status).toBe(401);
+    expect((after.body as Record<string, unknown>)['error']).toBe('MCP_UNAUTHORIZED');
+    expect((after.body as Record<string, unknown>)['reason']).toBe('revoked');
+  });
+});
+
 describe('HTTP method friendliness (/mcp preflight probes)', () => {
   let server: TestServer;
 
