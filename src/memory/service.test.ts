@@ -517,31 +517,52 @@ describe('MemoryService.updateMetadata', () => {
 });
 
 describe('MemoryService.delete', () => {
-  it('deletes a memory in the namespace', async () => {
-    const { client, fake } = makeQdrant({
-      retrieve: vi.fn(async () => [
-        {
-          id: 'mem-1',
-          payload: {
-            namespace: 'personal',
-            agent_id: 'agent_a',
-            kind: MEMORY_KIND,
-            content: 'hi',
-            tags: [],
-            created_at: 'now',
-            updated_at: 'now',
-          },
+  function liveRetrieve() {
+    return vi.fn(async () => [
+      {
+        id: 'mem-1',
+        payload: {
+          namespace: 'personal',
+          agent_id: 'agent_a',
+          kind: MEMORY_KIND,
+          content: 'hi',
+          tags: [],
+          created_at: 'now',
+          updated_at: 'now',
         },
-      ]),
+      },
+    ]);
+  }
+
+  it('soft-deletes by default: sets deleted_at tombstone, never hard-deletes (issue #105)', async () => {
+    const { client, fake } = makeQdrant({ retrieve: liveRetrieve() });
+    const service = makeService({
+      qdrant: client,
+      now: () => new Date('2026-07-01T00:00:00.000Z'),
     });
+
+    await service.delete({ namespace: 'personal', id: 'mem-1', deletedBy: 'agent_a' });
+
+    expect(fake.delete).not.toHaveBeenCalled();
+    expect(fake.setPayload).toHaveBeenCalledTimes(1);
+    const [, body] = fake.setPayload.mock.calls[0] as [
+      string,
+      { payload: { deleted_at: string; deleted_by: string }; points: string[] },
+    ];
+    expect(body.payload.deleted_at).toBe('2026-07-01T00:00:00.000Z');
+    expect(body.payload.deleted_by).toBe('agent_a');
+    expect(body.points).toEqual(['mem-1']);
+  });
+
+  it('hard-purges when includeDeleted is set (operator path, issue #105)', async () => {
+    const { client, fake } = makeQdrant({ retrieve: liveRetrieve() });
     const service = makeService({ qdrant: client });
 
-    await service.delete({ namespace: 'personal', id: 'mem-1' });
+    await service.delete({ namespace: 'personal', id: 'mem-1', includeDeleted: true });
+
+    expect(fake.setPayload).not.toHaveBeenCalled();
     expect(fake.delete).toHaveBeenCalledTimes(1);
-    const [, body] = (fake.delete.mock.calls[0] ?? []) as [
-      string,
-      { points: string[] },
-    ];
+    const [, body] = (fake.delete.mock.calls[0] ?? []) as [string, { points: string[] }];
     expect(body.points).toEqual(['mem-1']);
   });
 
@@ -743,6 +764,124 @@ describe('MemoryService.get / restore soft-delete', () => {
     const restored = await service.restore({ namespace: 'personal', id: 'mem-1' });
     expect(restored.deletedAt).toBeNull();
     expect(fake.setPayload).not.toHaveBeenCalled();
+  });
+
+  it('restore() also clears deleted_by set by a user soft-delete (issue #105)', async () => {
+    const { client, fake } = makeQdrant({
+      retrieve: vi.fn(async () => [
+        {
+          id: 'mem-1',
+          payload: {
+            namespace: 'personal',
+            agent_id: 'agent_a',
+            kind: MEMORY_KIND,
+            content: 'hi',
+            tags: [],
+            created_at: 'now',
+            updated_at: 'now',
+            deleted_at: '2026-07-01T00:00:00.000Z',
+            deleted_by: 'agent_a',
+          },
+        },
+      ]),
+    });
+    const service = makeService({ qdrant: client });
+
+    const restored = await service.restore({ namespace: 'personal', id: 'mem-1' });
+    expect(restored.deletedAt).toBeNull();
+    expect(restored.deletedBy).toBeNull();
+    const [, body] = fake.setPayload.mock.calls[0] as [
+      string,
+      { payload: { deleted_at: string | null; deleted_by: string | null } },
+    ];
+    expect(body.payload.deleted_at).toBeNull();
+    expect(body.payload.deleted_by).toBeNull();
+  });
+});
+
+// ── issue #105 / SEC-4: MCP soft-delete → restore roundtrip on a stateful store ─
+
+/**
+ * Minimal in-memory Qdrant that supports retrieve/setPayload/delete so a full
+ * delete → hidden → restore cycle can be exercised without a live server.
+ */
+function makeStatefulQdrant(seed: Record<string, Record<string, unknown>>): {
+  client: QdrantClient;
+  store: Map<string, Record<string, unknown>>;
+} {
+  const store = new Map<string, Record<string, unknown>>(Object.entries(seed));
+  const client = {
+    retrieve: vi.fn(async (_c: string, { ids }: { ids: string[] }) =>
+      ids
+        .filter((id) => store.has(id))
+        .map((id) => ({ id, payload: store.get(id) })),
+    ),
+    setPayload: vi.fn(
+      async (
+        _c: string,
+        { payload, points }: { payload: Record<string, unknown>; points: string[] },
+      ) => {
+        for (const id of points) {
+          const existing = store.get(id);
+          if (existing) store.set(id, { ...existing, ...payload });
+        }
+        return { status: 'completed' };
+      },
+    ),
+    delete: vi.fn(async (_c: string, { points }: { points: string[] }) => {
+      for (const id of points) store.delete(id);
+      return { status: 'completed' };
+    }),
+    upsert: vi.fn(async () => ({ status: 'completed' })),
+    search: vi.fn(async () => []),
+  };
+  return { client: client as unknown as QdrantClient, store };
+}
+
+describe('MemoryService soft-delete roundtrip (issue #105)', () => {
+  const seed = () => ({
+    'mem-1': {
+      namespace: 'personal',
+      agent_id: 'agent_a',
+      kind: MEMORY_KIND,
+      content: 'hi',
+      tags: [],
+      created_at: 'now',
+      updated_at: 'now',
+      deleted_at: null,
+      deleted_by: null,
+    },
+  });
+
+  it('MCP delete tombstones the record, hides it from get, then memory_restore brings it back', async () => {
+    const { client, store } = makeStatefulQdrant(seed());
+    const service = makeService({
+      qdrant: client,
+      now: () => new Date('2026-07-01T00:00:00.000Z'),
+    });
+
+    // (1) soft-delete via the MCP path (no includeDeleted)
+    await service.delete({ namespace: 'personal', id: 'mem-1', deletedBy: 'agent_a' });
+    expect(store.get('mem-1')?.['deleted_at']).toBe('2026-07-01T00:00:00.000Z');
+    expect(store.get('mem-1')?.['deleted_by']).toBe('agent_a');
+    expect(store.has('mem-1')).toBe(true); // NOT purged
+
+    // (2) get() hides it by default; operator get(includeDeleted) still sees it
+    await expect(
+      service.get({ namespace: 'personal', id: 'mem-1' }),
+    ).rejects.toBeInstanceOf(MemoryNotFoundError);
+    const tombstoned = await service.get({
+      namespace: 'personal',
+      id: 'mem-1',
+      includeDeleted: true,
+    });
+    expect(tombstoned.deletedBy).toBe('agent_a');
+
+    // (3) memory_restore clears the tombstone → live again
+    const restored = await service.restore({ namespace: 'personal', id: 'mem-1' });
+    expect(restored.deletedAt).toBeNull();
+    const live = await service.get({ namespace: 'personal', id: 'mem-1' });
+    expect(live.id).toBe('mem-1');
   });
 });
 

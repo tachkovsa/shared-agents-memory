@@ -44,6 +44,8 @@ export interface MemoryRecord {
   supersededBy: string | null;
   /** Soft-delete tombstone (ISO-8601); excluded from search/get when set (§3.4). */
   deletedAt: string | null;
+  /** Author (agent/PAT id) that soft-deleted this record; null when live or decay-deleted (issue #105). */
+  deletedBy: string | null;
   /** Truth-correspondence signal (§3.6); 'unverified' until the staleness audit runs. */
   stalenessSignal: StalenessSignal;
   /** Opt-in reference the staleness audit re-checks (§3.6); null → never audited. */
@@ -139,8 +141,16 @@ export interface UpdateMemoryMetadataInput {
 export interface DeleteMemoryInput {
   namespace: string;
   id: string;
-  /** Allow hard-deleting a soft-deleted (tombstoned) point; default false. */
+  /**
+   * Operator hard-purge switch (issue #105 / SEC-4). When true the point is
+   * physically removed — this is the operator console path, which also lets it
+   * purge tombstones it browses via include_deleted. When false/undefined (the
+   * MCP `memory_delete` path) the delete is a SOFT delete: it sets the same
+   * `deleted_at` tombstone the decay sweep uses, keeping the record restorable.
+   */
   includeDeleted?: boolean;
+  /** Author (agent/PAT id) recorded on the soft-delete tombstone (issue #105). */
+  deletedBy?: string;
 }
 
 export const MEMORY_MAX_CONTENT_LENGTH = 32_000;

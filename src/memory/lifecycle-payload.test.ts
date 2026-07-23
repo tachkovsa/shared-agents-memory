@@ -26,6 +26,7 @@ describe('lifecycle payload round-trip', () => {
     decayScore: 0.42,
     supersededBy: '22222222-2222-2222-2222-222222222222',
     deletedAt: '2026-06-09T00:00:00.000Z',
+    deletedBy: 'agent-a',
     stalenessSignal: 'stale',
     verifiesAgainst: {
       kind: 'file',
@@ -54,6 +55,7 @@ describe('lifecycle payload round-trip', () => {
     expect(m.decayScore).toBe(DECAY_DEFAULT_SCORE);
     expect(m.supersededBy).toBeNull();
     expect(m.deletedAt).toBeNull();
+    expect(m.deletedBy).toBeNull();
     expect(m.stalenessSignal).toBe('unverified');
     expect(m.verifiesAgainst).toBeNull();
   });
