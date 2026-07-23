@@ -2,7 +2,10 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { basename } from 'node:path';
 import {
+  countNamespaceVectors,
+  listDeletedNamespaceDirs,
   listDeletedNamespaceIds,
   purgeNamespaceVectors,
   sweepOrphanedNamespaceVectors,
@@ -38,6 +41,58 @@ describe('purgeNamespaceVectors', () => {
       wait: true,
       filter: { must: [{ key: 'namespace', match: { value: 'team-alpha' } }] },
     });
+  });
+});
+
+describe('countNamespaceVectors', () => {
+  it('issues a namespace-filtered count and returns the number of points', async () => {
+    const count = vi.fn(async () => ({ count: 7 }));
+
+    const n = await countNamespaceVectors({ count } as never, COLLECTION, 'team-alpha');
+
+    expect(n).toBe(7);
+    expect(count).toHaveBeenCalledTimes(1);
+    const [collection, body] = count.mock.calls[0]!;
+    expect(collection).toBe(COLLECTION);
+    expect(body).toEqual({
+      filter: { must: [{ key: 'namespace', match: { value: 'team-alpha' } }] },
+    });
+  });
+});
+
+describe('listDeletedNamespaceDirs', () => {
+  it('returns [] when _deleted/ does not exist', async () => {
+    expect(await listDeletedNamespaceDirs(workDir, 'team-alpha')).toEqual([]);
+  });
+
+  it('returns every _deleted/<id>-<ts> dir for exactly the given id and no others', async () => {
+    await seedDeletedDir('team-alpha-1700000000000');
+    await seedDeletedDir('team-alpha-1700000009999');
+    await seedDeletedDir('team-beta-1700000000000');
+
+    const dirs = await listDeletedNamespaceDirs(workDir, 'team-alpha');
+
+    expect(dirs.map((d) => basename(d)).sort()).toEqual([
+      'team-alpha-1700000000000',
+      'team-alpha-1700000009999',
+    ]);
+  });
+
+  it('does not match a different namespace whose id shares a prefix', async () => {
+    // 'team' must not sweep up 'team-alpha-<ts>' — only a literal -<digits> suffix counts.
+    await seedDeletedDir('team-1700000000000');
+    await seedDeletedDir('team-alpha-1700000000000');
+
+    const dirs = await listDeletedNamespaceDirs(workDir, 'team');
+    expect(dirs.map((d) => basename(d))).toEqual(['team-1700000000000']);
+  });
+
+  it('ignores hidden / partial dirs', async () => {
+    await seedDeletedDir('.tmp-team-alpha-1700000000000');
+    await seedDeletedDir('team-alpha-1700000000000');
+
+    const dirs = await listDeletedNamespaceDirs(workDir, 'team-alpha');
+    expect(dirs.map((d) => basename(d))).toEqual(['team-alpha-1700000000000']);
   });
 });
 

@@ -8,7 +8,8 @@ export type AuthAuditEvent =
   | 'pat.revoked'
   | 'auth.rate_limited'
   | 'namespace.member_removed'
-  | 'namespace.vector_purge_failed';
+  | 'namespace.vector_purge_failed'
+  | 'namespace.hard_deleted';
 
 export interface AuditWriterOptions {
   path: string;

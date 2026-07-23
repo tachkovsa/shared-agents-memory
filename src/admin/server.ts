@@ -23,6 +23,10 @@ export interface AdminServerOptions {
   patStore?: PatStore;
   /** MemoryService over the engine's Qdrant — enables the memory browser routes. */
   memoryService?: MemoryService;
+  /** Engine Qdrant client — enables the verifiable operator hard-delete route (needs `collection`). */
+  qdrant?: QdrantClient;
+  /** Qdrant collection the memories live in — required alongside `qdrant` for hard-delete. */
+  collection?: string;
   /** Enables the observability summary route (health + counts + metrics). */
   observability?: {
     qdrant: QdrantClient;
@@ -62,6 +66,8 @@ export async function startAdminServer(opts: AdminServerOptions): Promise<AdminS
     dataDir: opts.dataDir,
     patStore: opts.patStore,
     memoryService: opts.memoryService,
+    qdrant: opts.qdrant,
+    collection: opts.collection,
     observability: opts.observability,
   });
   app.addHook('onClose', () => {
