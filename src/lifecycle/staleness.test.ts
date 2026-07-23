@@ -3,9 +3,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { QdrantClient } from '@qdrant/js-client-rest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { StalenessAuditor, type StalenessCheckers } from './staleness.js';
+import {
+  StalenessAuditor,
+  isBlockedAddress,
+  type StalenessCheckers,
+} from './staleness.js';
+import { lookup as dnsLookup } from 'node:dns/promises';
 import { createNamespaceSkeleton } from '../namespaces/store.js';
 import type { StalenessSignal } from '../memory/types.js';
+
+// DNS is mocked so the url SSRF-guard tests are deterministic and never touch
+// the network. `lookup` is the only export the checker uses.
+vi.mock('node:dns/promises', () => ({
+  lookup: vi.fn(),
+}));
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -568,5 +579,139 @@ describe('defaultStalenessCheckers.file — path traversal guard', () => {
     for (const evil of ['--upload-pack=touch /tmp/pwned', '-x', '..', 'a;b', 'a b']) {
       expect(await real.gitCommit(evil, '/some/repo')).toBeNull();
     }
+  });
+});
+
+// ── SSRF guard for the url checker (issue #103 / SEC-2) ───────────────────────
+
+describe('isBlockedAddress — SSRF IP-range guard', () => {
+  it('blocks loopback, link-local, RFC1918, CGNAT, multicast, unspecified IPv4', () => {
+    for (const ip of [
+      '127.0.0.1', // loopback
+      '127.10.20.30', // loopback (whole /8)
+      '169.254.169.254', // cloud metadata (link-local)
+      '10.0.0.5', // RFC1918
+      '172.16.0.1', // RFC1918
+      '172.31.255.255', // RFC1918 upper edge
+      '192.168.1.1', // RFC1918
+      '100.64.0.1', // CGNAT
+      '224.0.0.1', // multicast
+      '255.255.255.255', // broadcast / reserved
+      '0.0.0.0', // unspecified
+    ]) {
+      expect(isBlockedAddress(ip)).toBe(true);
+    }
+  });
+
+  it('blocks loopback, link-local, unique-local, mapped-internal IPv6', () => {
+    for (const ip of [
+      '::1', // loopback
+      '::', // unspecified
+      'fe80::1', // link-local
+      'fc00::1', // unique-local
+      'fd12:3456::1', // unique-local
+      'ff02::1', // multicast
+      '::ffff:127.0.0.1', // IPv4-mapped loopback
+      '::ffff:169.254.169.254', // IPv4-mapped metadata
+    ]) {
+      expect(isBlockedAddress(ip)).toBe(true);
+    }
+  });
+
+  it('allows ordinary public IPv4/IPv6 addresses', () => {
+    for (const ip of ['8.8.8.8', '1.1.1.1', '93.184.216.34', '2606:4700:4700::1111']) {
+      expect(isBlockedAddress(ip)).toBe(false);
+    }
+  });
+
+  it('blocks anything that is not a valid IP literal (fail closed)', () => {
+    for (const bad of ['', 'not-an-ip', '999.999.999.999', 'example.com']) {
+      expect(isBlockedAddress(bad)).toBe(true);
+    }
+  });
+});
+
+describe('defaultStalenessCheckers.url — SSRF network guard', () => {
+  const lookupMock = vi.mocked(dnsLookup);
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    lookupMock.mockReset();
+    fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects a non-http(s) scheme without DNS or fetch', async () => {
+    const { defaultStalenessCheckers: real } = await import('./staleness.js');
+    for (const ref of ['file:///etc/passwd', 'gopher://host/', 'ftp://host/x']) {
+      expect(await real.url(ref)).toBeNull();
+    }
+    expect(lookupMock).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects a URL whose host resolves to an internal address — no fetch', async () => {
+    const { defaultStalenessCheckers: real } = await import('./staleness.js');
+    lookupMock.mockResolvedValue([{ address: '169.254.169.254', family: 4 }]);
+
+    const result = await real.url('http://metadata.evil.test/latest/meta-data/');
+
+    expect(result).toBeNull();
+    expect(lookupMock).toHaveBeenCalledWith('metadata.evil.test', { all: true });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects when ANY resolved address is internal (mixed A records)', async () => {
+    const { defaultStalenessCheckers: real } = await import('./staleness.js');
+    lookupMock.mockResolvedValue([
+      { address: '93.184.216.34', family: 4 },
+      { address: '127.0.0.1', family: 4 },
+    ]);
+
+    expect(await real.url('http://rebind.evil.test/')).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('fetches with redirect:manual for a public host (redirects not followed)', async () => {
+    const { defaultStalenessCheckers: real } = await import('./staleness.js');
+    lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+    fetchSpy.mockResolvedValue({ status: 200 } as Response);
+
+    const result = await real.url('https://example.com/api');
+
+    expect(result).toBe('fresh');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [, opts] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(opts.redirect).toBe('manual');
+    expect(opts.method).toBe('HEAD');
+  });
+
+  it('maps an opaqueredirect (status 0) to null — a redirect is not treated as fresh', async () => {
+    const { defaultStalenessCheckers: real } = await import('./staleness.js');
+    lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+    // redirect:'manual' yields an opaqueredirect response with status 0.
+    fetchSpy.mockResolvedValue({ status: 0 } as Response);
+
+    expect(await real.url('https://example.com/redirects-internally')).toBeNull();
+  });
+
+  it('returns broken_ref on 404 for a public host', async () => {
+    const { defaultStalenessCheckers: real } = await import('./staleness.js');
+    lookupMock.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+    fetchSpy.mockResolvedValue({ status: 404 } as Response);
+
+    expect(await real.url('https://example.com/missing')).toBe('broken_ref');
+  });
+
+  it('returns null (no fetch) when DNS resolution fails', async () => {
+    const { defaultStalenessCheckers: real } = await import('./staleness.js');
+    lookupMock.mockRejectedValue(new Error('ENOTFOUND'));
+
+    expect(await real.url('https://nope.invalid/')).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
