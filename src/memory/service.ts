@@ -116,6 +116,11 @@ export class MemoryService {
 
     // Caller-supplied id → idempotent upsert; dedup branch skipped (ADR-0006 §3.2).
     if (input.id) {
+      // Qdrant point ids are collection-global (SEC-5 / #106): a caller-supplied
+      // id that already exists in ANOTHER namespace must not be overwritten (its
+      // payload namespace would silently flip to the caller's). Mirror the
+      // fetchOwned/markSuperseded namespace guard before upserting.
+      await this.assertIdFreeForNamespace(input.id, input.namespace);
       const record = this.insertRecord(input, input.id, nowIso);
       await this.upsertPoint(record, vector);
       const supersededIds = await this.markSuperseded(input, record.id);
@@ -507,6 +512,28 @@ export class MemoryService {
       wait: true,
       points: [{ id: record.id, vector, payload: memoryToPayload(record) }],
     });
+  }
+
+  /**
+   * SEC-5 / #106 — guard a caller-supplied id upsert against cross-tenant
+   * overwrite. Point ids are collection-global, so a `retrieve` by id can land
+   * on a point in ANY namespace. If the id already exists and belongs to a
+   * different namespace, reject (same namespace check as fetchOwned /
+   * markSuperseded); a brand-new id or a same-namespace update is allowed.
+   */
+  private async assertIdFreeForNamespace(id: string, namespaceId: string): Promise<void> {
+    const points = await this.qdrant.retrieve(this.collection, {
+      ids: [id],
+      with_payload: true,
+    });
+    if (points.length === 0) return; // brand-new id → free to insert
+    const payload = (points[0].payload ?? {}) as Record<string, unknown>;
+    if (payload['namespace'] !== namespaceId) {
+      throw new MemoryValidationError(
+        `Memory id "${id}" already exists in another namespace`,
+        'id',
+      );
+    }
   }
 
   private async fetchOwned(
