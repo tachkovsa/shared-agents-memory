@@ -17,7 +17,14 @@ import type {
   PatRecord,
 } from './types.js';
 
-export const DEFAULT_CACHE_TTL_MS = 60_000;
+/**
+ * Lookup-cache TTL. Kept deliberately short (5s) so a PAT revoked out-of-band
+ * (e.g. by another process writing the same store) stops authenticating within
+ * seconds even before its cache entry is explicitly invalidated. In-process
+ * revoke/rotate/delete already call `invalidateCacheForId` for immediate effect
+ * (issue #104, SEC-3 / N1); the TTL is the defence-in-depth backstop.
+ */
+export const DEFAULT_CACHE_TTL_MS = 5_000;
 
 export interface PatStoreOptions {
   storePath: string;
