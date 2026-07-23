@@ -179,7 +179,13 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
       const { ctx, error } = await authorize('memory_store', input.namespace, 'memory:write');
       if (!ctx) return authErrorResponse(error!);
 
-      // ── Quota check (issue #59) ────────────────────────────────────────────
+      // ── Quota reservation (issue #59) ──────────────────────────────────────
+      // reserve() consumes the write + embedding_tokens BEFORE the embed/store
+      // below. If that path does not persist a NEW point (embed throws, or the
+      // store dedups into an existing point), the reservation is compensated via
+      // releaseReservation() so the failure/dedup can't wedge the daily budget
+      // (issue #109 / SEC-8).
+      let reservedTokens: number | null = null;
       if (quota) {
         const ns = await loadNamespace(dataDir, ctx.namespaceId);
         const nsQuota = ns?.quota;
@@ -211,8 +217,19 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
             }
             throw err;
           }
+          reservedTokens = estimatedTokens;
         }
       }
+
+      // Compensating refund for the reservation above. Runs at most once per
+      // request (the `compensated` guard) and QuotaService.release() clamps at 0,
+      // so it is idempotent and never drives a counter negative (issue #109).
+      let compensated = false;
+      const releaseReservation = async (): Promise<void> => {
+        if (!quota || reservedTokens === null || compensated) return;
+        compensated = true;
+        await quota.release(ctx.namespaceId, 'write', { estimatedTokens: reservedTokens });
+      };
 
       try {
         // Quota already consumed atomically by reserve() above (no separate
@@ -242,6 +259,12 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
             : {}),
         });
 
+        // A dedup reinforce/merge (ADR-0006 §3.2) persists NO new point — refund
+        // the write + embedding_tokens reserved for a new memory (issue #109).
+        if (outcome !== 'inserted') {
+          await releaseReservation();
+        }
+
         return jsonResponse({
           id: record.id,
           outcome,
@@ -250,6 +273,10 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
           created_at: record.createdAt,
         });
       } catch (err) {
+        // The embed/store never persisted a new point (embedding threw — breaker
+        // open / upstream failure — or validation rejected before embed). Refund
+        // the reservation so a failed write can't wedge the daily budget (#109).
+        await releaseReservation();
         if (err instanceof MemoryValidationError) return validationErrorResponse(err);
         throw err;
       }
