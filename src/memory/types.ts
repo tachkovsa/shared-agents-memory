@@ -31,7 +31,6 @@ export interface MemoryRecord {
   source?: string;
   createdAt: string;
   updatedAt: string;
-  expiresAt?: string;
   // ADR-0006 §3.3 reinforcement fields (added by #26).
   retrievalCount: number;
   lastRetrievedAt: string | null;

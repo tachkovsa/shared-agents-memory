@@ -123,6 +123,23 @@ describe('pat_create', () => {
     }
   });
 
+  it('rejects a malformed allowed_namespaces entry (N3 #110)', async () => {
+    // Same canonical kebab-case namespace-id validator as the namespace/rule
+    // tools: a PAT can no longer be minted scoped to an inert, malformed ns.
+    const { client } = await setupHarness();
+    const result = (await client.callTool({
+      name: 'pat_create',
+      arguments: {
+        display_name: 'codex',
+        agent_identity: 'agent_codex',
+        allowed_namespaces: ['Bad_NS'],
+        scopes: ['memory:read'],
+      },
+    })) as { content: { text: string }[]; isError?: boolean };
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/kebab-case/);
+  });
+
   it('rejects the second call when input changed (input_hash mismatch)', async () => {
     const { client } = await setupHarness();
     const firstCall = await client.callTool({

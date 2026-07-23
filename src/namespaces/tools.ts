@@ -19,6 +19,7 @@ import {
   listNamespaceIds,
   loadMembers,
   loadNamespace,
+  namespaceIdSchema as sharedNamespaceIdSchema,
   NamespaceExistsError,
   NamespaceNotFoundError,
   pruneOrphanedMembers,
@@ -50,14 +51,11 @@ export interface NamespaceToolDeps {
   now?: () => Date;
 }
 
-// Validate kebab-case namespace IDs per spec: /^[a-z][a-z0-9-]{1,62}[a-z0-9]$/
-const namespaceIdSchema = z
-  .string()
-  .regex(
-    /^[a-z][a-z0-9-]{1,62}[a-z0-9]$/,
-    'Namespace ID must be kebab-case: start with a-z, 3-64 chars, end with a-z0-9',
-  )
-  .describe('Kebab-case namespace ID, e.g. "personal" or "team-alpha"');
+// Reuse the single canonical namespace-id validator (SEC-9 / N3, #110); the
+// kebab-case regex lives once in ../namespaces/store.ts.
+const namespaceIdSchema = sharedNamespaceIdSchema.describe(
+  'Kebab-case namespace ID, e.g. "personal" or "team-alpha"',
+);
 
 const retentionSchema = z
   .enum(['keep-forever', 'decay-90d', 'decay-180d', 'decay-365d'] as const)

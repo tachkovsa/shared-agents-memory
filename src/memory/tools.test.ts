@@ -650,3 +650,28 @@ describe('memory_restore', () => {
     expect(result.isError).toBe(true);
   });
 });
+
+// N3 (#110) — the memory tools must reject a malformed namespace id with the
+// SAME canonical kebab-case validator the namespace/rule tools use, instead of
+// letting a bad ns through as an inert, unmatchable string.
+describe('memory tools namespace-id validation (N3 #110)', () => {
+  const ID = '11111111-1111-1111-1111-111111111111';
+
+  it.each([
+    ['memory_store', { namespace: 'Bad_NS', content: 'hi' }],
+    ['memory_search', { namespace: 'Bad_NS', query: 'hi' }],
+    ['memory_get', { namespace: 'Bad_NS', id: ID }],
+    ['memory_delete', { namespace: 'Bad_NS', id: ID }],
+    ['memory_restore', { namespace: 'Bad_NS', id: ID }],
+    ['memory_update_metadata', { namespace: 'Bad_NS', id: ID, summary: 'x' }],
+  ])('%s rejects a non-kebab namespace at the schema boundary', async (name, args) => {
+    const { client } = await setupHarness();
+    const result = (await client.callTool({ name, arguments: args })) as {
+      content: { text: string }[];
+      isError?: boolean;
+    };
+    expect(result.isError).toBe(true);
+    // Same canonical validation message the namespace/rule tools surface.
+    expect(result.content[0].text).toMatch(/kebab-case/);
+  });
+});

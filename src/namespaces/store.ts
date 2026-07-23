@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createId } from '@paralleldrive/cuid2';
+import { z } from 'zod';
 import type { AgentScope } from '../auth/types.js';
 import {
   DEFAULT_DEDUP_THRESHOLD,
@@ -45,7 +46,21 @@ export class NamespaceNotFoundError extends Error {
 }
 
 /** Canonical namespace-id shape (kebab-case, 3–64 chars). */
-const NAMESPACE_ID_REGEX = /^[a-z][a-z0-9-]{1,62}[a-z0-9]$/;
+export const NAMESPACE_ID_REGEX = /^[a-z][a-z0-9-]{1,62}[a-z0-9]$/;
+
+/**
+ * SEC-9 / N3 (#110) — single canonical zod validator for a namespace id, reused
+ * by every tool layer that accepts one (namespace, rule, memory, and auth tools)
+ * so a malformed ns is rejected uniformly at the boundary rather than silently
+ * becoming an inert, unmatchable string. Do NOT fork a second regex — import this
+ * (or `NAMESPACE_ID_REGEX`) instead.
+ */
+export const namespaceIdSchema = z
+  .string()
+  .regex(
+    NAMESPACE_ID_REGEX,
+    'Namespace ID must be kebab-case: start with a-z, 3-64 chars, end with a-z0-9',
+  );
 
 /**
  * Validate a namespace id before it reaches the filesystem. Callers that take an
