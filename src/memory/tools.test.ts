@@ -442,6 +442,7 @@ async function setupHarnessWithQuota(
   quota: NamespaceQuota,
   qdrantOverrides: Partial<FakeQdrant> = {},
   countNamespaceMemoriesOverride?: (ns: string) => Promise<number>,
+  embeddingsOverride?: EmbeddingClient,
 ): Promise<{ client: Client; fake: FakeQdrant; quotaService: QuotaService }> {
   const patStore = await PatStore.open({ storePath, pepper: PEPPER });
   const scopes = ALL_SCOPES;
@@ -468,7 +469,7 @@ async function setupHarnessWithQuota(
   });
 
   const { client: qdrantClient, fake } = makeQdrant(qdrantOverrides);
-  const embeddings = makeEmbeddings();
+  const embeddings = embeddingsOverride ?? makeEmbeddings();
   const service = new MemoryService({
     qdrant: qdrantClient,
     embeddings,
@@ -595,6 +596,112 @@ describe('memory_store — quota enforcement', () => {
     expect(result.isError).toBe(true);
     expect(JSON.parse(result.content[0].text).limit).toBe('max_memories');
     expect(fake.upsert).not.toHaveBeenCalled();
+  });
+});
+
+// ── Quota refund on failed / deduped writes (issue #109 / SEC-8) ─────────────
+
+describe('memory_store — quota refund (issue #109)', () => {
+  it('refunds the reservation when the embedding call throws (breaker open)', async () => {
+    // A tight budget: exactly one write + enough tokens for one small store.
+    const quota = makeTightQuota({ daily_writes: 1, daily_embedding_tokens: 100 });
+    const throwingEmbeddings = {
+      embed: vi.fn(async () => {
+        throw new Error('embedding circuit breaker open');
+      }),
+    } as unknown as EmbeddingClient;
+
+    const { client, fake, quotaService } = await setupHarnessWithQuota(
+      quota,
+      {},
+      undefined,
+      throwingEmbeddings,
+    );
+
+    // The store fails because the embed throws. The MCP layer surfaces this as
+    // either a thrown error or an isError response; either way no point persists.
+    await client
+      .callTool({
+        name: 'memory_store',
+        arguments: { namespace: 'personal', content: 'hello' },
+      })
+      .catch(() => undefined);
+    expect(fake.upsert).not.toHaveBeenCalled();
+
+    // The reservation must be refunded: the failed attempt released its write +
+    // tokens, so the write counter is back to 0 and a fresh cap-1 check passes.
+    await expect(
+      quotaService.check('personal', 'write', { quota: makeTightQuota({ daily_writes: 1 }) }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('does not net-consume write/token budget on a dedup reinforce (no new point)', async () => {
+    // Default dedup threshold (0.95) applies; a top-1 hit at score 0.999 is above
+    // the reinforce threshold (0.99), so the store reinforces an existing point.
+    const existingId = '22222222-2222-2222-2222-222222222222';
+    const quota = makeTightQuota({ daily_writes: 5, daily_embedding_tokens: 1_000 });
+    const { client, fake, quotaService } = await setupHarnessWithQuota(quota, {
+      search: vi.fn(async () => [
+        {
+          id: existingId,
+          score: 0.999,
+          payload: {
+            namespace: 'personal',
+            agent_id: 'agent_session',
+            kind: MEMORY_KIND,
+            content: 'hello',
+            tags: [],
+            created_at: 'now',
+            updated_at: 'now',
+            retrieval_count: 0,
+          },
+        },
+      ]),
+    });
+
+    const body = parsePayload(
+      (await client.callTool({
+        name: 'memory_store',
+        arguments: { namespace: 'personal', content: 'hello' },
+      })) as never,
+    );
+    // Reinforce landed on the existing point; no new point was upserted.
+    expect(body.outcome).toBe('reinforced');
+    expect(body.matched_existing_id).toBe(existingId);
+    expect(fake.upsert).not.toHaveBeenCalled();
+
+    // The write + tokens reserved for a NEW point were refunded: the counter is
+    // back to 0, so a cap-1 check still passes (a net-consumed write would fail).
+    await expect(
+      quotaService.check('personal', 'write', { quota: makeTightQuota({ daily_writes: 1 }) }),
+    ).resolves.toBeUndefined();
+    // And the token budget was refunded too: a tight token cap still has full room.
+    await expect(
+      quotaService.check('personal', 'write', {
+        quota: makeTightQuota({ daily_writes: 5, daily_embedding_tokens: 10 }),
+        estimatedTokens: 10,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('still consumes budget on a genuine insert (no over-refund)', async () => {
+    // Guard: the refund path must not fire when a real point IS persisted.
+    const quota = makeTightQuota({ daily_writes: 1, daily_embedding_tokens: 1_000 });
+    const { client, fake, quotaService } = await setupHarnessWithQuota(quota);
+
+    const body = parsePayload(
+      (await client.callTool({
+        name: 'memory_store',
+        arguments: { namespace: 'personal', content: 'brand new memory' },
+      })) as never,
+    );
+    expect(body.outcome).toBe('inserted');
+    expect(fake.upsert).toHaveBeenCalledTimes(1);
+
+    // The write was consumed and NOT refunded — a second write against cap 1 fails.
+    await expect(
+      quotaService.check('personal', 'write', { quota }),
+    ).rejects.toMatchObject({ limit: 'daily_writes', used: 1 });
   });
 });
 

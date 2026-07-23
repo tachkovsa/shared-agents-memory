@@ -196,6 +196,32 @@ export class QuotaService {
     });
   }
 
+  /**
+   * Compensating inverse of `reserve` (issue #109 / SEC-8). Refund a reservation
+   * that did NOT result in a persisted new point — the embedding call threw
+   * (breaker open / upstream failure) or the store resolved to a dedup
+   * reinforce/merge that created no new point. Without this, a failed/deduped
+   * write leaves its `writes` + `embedding_tokens` charged forever, which can
+   * wedge a namespace's daily budget for the rest of the UTC day.
+   *
+   * Idempotent + non-negative: counters are clamped at 0, so a double refund (or
+   * a refund of a reservation that already rolled over to a new day) can never
+   * drive a counter below zero. Callers still guard against multiple refunds of
+   * the same reservation, but the clamp makes an accidental extra call harmless.
+   */
+  async release(
+    namespace: string,
+    kind: 'write' | 'search',
+    opts?: { estimatedTokens?: number },
+  ): Promise<void> {
+    await this.withLock(namespace, async () => {
+      const file = await this.load(namespace);
+      const usage = this.resolveUsage(file);
+      this.applyDecrement(usage, kind, opts?.estimatedTokens);
+      await this.save(namespace, { usage, last_reset: file.last_reset });
+    });
+  }
+
   private applyIncrement(
     usage: QuotaUsage,
     kind: 'write' | 'search',
@@ -204,6 +230,19 @@ export class QuotaService {
     if (kind === 'write') usage.writes += 1;
     else usage.searches += 1;
     if (estimatedTokens) usage.embedding_tokens += estimatedTokens;
+  }
+
+  /** Inverse of `applyIncrement`, clamped at 0 so counters never go negative. */
+  private applyDecrement(
+    usage: QuotaUsage,
+    kind: 'write' | 'search',
+    estimatedTokens?: number,
+  ): void {
+    if (kind === 'write') usage.writes = Math.max(0, usage.writes - 1);
+    else usage.searches = Math.max(0, usage.searches - 1);
+    if (estimatedTokens) {
+      usage.embedding_tokens = Math.max(0, usage.embedding_tokens - estimatedTokens);
+    }
   }
 
   // ── Private helpers ─────────────────────────────────────────────────────────
