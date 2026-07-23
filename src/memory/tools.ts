@@ -9,7 +9,14 @@ import { loadNamespace } from '../namespaces/store.js';
 import { QuotaExceededError, type QuotaService } from '../quota/quota-service.js';
 import type { ReinforcementBuffer } from './reinforcement.js';
 import { MemoryNotFoundError, MemoryService, MemoryValidationError } from './service.js';
-import { MEMORY_MAX_CONTENT_LENGTH, MEMORY_MAX_TAGS } from './types.js';
+import {
+  MEMORY_MAX_CONTENT_LENGTH,
+  MEMORY_MAX_METADATA_BYTES,
+  MEMORY_MAX_SOURCE_LENGTH,
+  MEMORY_MAX_SUMMARY_LENGTH,
+  MEMORY_MAX_TAG_LENGTH,
+  MEMORY_MAX_TAGS,
+} from './types.js';
 
 export interface MemoryToolDeps {
   service: MemoryService;
@@ -36,6 +43,19 @@ interface AuthDecision {
   ctx: RequestContext | null;
   error: AuthError | null;
 }
+
+/**
+ * SEC-6 (#107) — arbitrary metadata bounded by serialized byte size so a writer
+ * cannot bloat the Qdrant payload or evade the token budget. The service layer
+ * re-checks the same limit (`validateMetadata`), mirroring how `content` is
+ * capped in both the zod tool layer and `validateContent`.
+ */
+const metadataSchema = z
+  .record(z.string(), z.unknown())
+  .refine(
+    (m) => Buffer.byteLength(JSON.stringify(m)) <= MEMORY_MAX_METADATA_BYTES,
+    { message: `metadata exceeds maximum serialized size of ${MEMORY_MAX_METADATA_BYTES} bytes` },
+  );
 
 function jsonResponse(payload: unknown, isError = false) {
   const result: {
@@ -115,17 +135,22 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
         .min(1)
         .max(MEMORY_MAX_CONTENT_LENGTH)
         .describe('Memory content text'),
-      summary: z.string().optional().describe('Brief summary of the memory'),
-      metadata: z
-        .record(z.string(), z.unknown())
+      summary: z
+        .string()
+        .max(MEMORY_MAX_SUMMARY_LENGTH)
         .optional()
-        .describe('Arbitrary metadata'),
+        .describe('Brief summary of the memory'),
+      metadata: metadataSchema.optional().describe('Arbitrary metadata'),
       tags: z
-        .array(z.string())
+        .array(z.string().max(MEMORY_MAX_TAG_LENGTH))
         .max(MEMORY_MAX_TAGS)
         .optional()
         .describe('Tags for filtering'),
-      source: z.string().optional().describe('Origin of this memory'),
+      source: z
+        .string()
+        .max(MEMORY_MAX_SOURCE_LENGTH)
+        .optional()
+        .describe('Origin of this memory'),
       id: z
         .string()
         .uuid()
@@ -159,7 +184,14 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
         const ns = await loadNamespace(dataDir, ctx.namespaceId);
         const nsQuota = ns?.quota;
         if (nsQuota) {
-          const estimatedTokens = Math.ceil(input.content.length / 4);
+          // SEC-6 (#107) — include metadata in the estimate so a writer can't
+          // evade the token budget by shifting payload from content to metadata.
+          const metadataBytes = input.metadata
+            ? Buffer.byteLength(JSON.stringify(input.metadata))
+            : 0;
+          const estimatedTokens = Math.ceil(
+            (input.content.length + metadataBytes) / 4,
+          );
           const currentCount = countNamespaceMemories
             ? await countNamespaceMemories(ctx.namespaceId)
             : undefined;
@@ -323,17 +355,24 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
     {
       namespace: z.string().describe('Namespace the memory belongs to'),
       id: z.string().uuid().describe('Memory ID'),
-      summary: z.string().optional().describe('New summary (omit to leave unchanged)'),
-      metadata: z
-        .record(z.string(), z.unknown())
+      summary: z
+        .string()
+        .max(MEMORY_MAX_SUMMARY_LENGTH)
+        .optional()
+        .describe('New summary (omit to leave unchanged)'),
+      metadata: metadataSchema
         .optional()
         .describe('New metadata (replaces the existing object; omit to leave unchanged)'),
       tags: z
-        .array(z.string())
+        .array(z.string().max(MEMORY_MAX_TAG_LENGTH))
         .max(MEMORY_MAX_TAGS)
         .optional()
         .describe('New tags (replaces existing tags; omit to leave unchanged)'),
-      source: z.string().optional().describe('New source (omit to leave unchanged)'),
+      source: z
+        .string()
+        .max(MEMORY_MAX_SOURCE_LENGTH)
+        .optional()
+        .describe('New source (omit to leave unchanged)'),
     },
     async (input) => {
       const { ctx, error } = await authorize(
