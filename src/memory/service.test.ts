@@ -120,6 +120,90 @@ describe('MemoryService.store', () => {
     expect(body.points[0].id).toBe(id);
   });
 
+  it('rejects a caller-supplied id that already exists in another namespace (SEC-5 / #106)', async () => {
+    const id = '22222222-2222-2222-2222-222222222222';
+    const { client, fake } = makeQdrant({
+      retrieve: vi.fn(async () => [
+        {
+          id,
+          payload: {
+            namespace: 'other',
+            agent_id: 'agent_b',
+            kind: MEMORY_KIND,
+            content: 'victim',
+            tags: [],
+            created_at: 'now',
+            updated_at: 'now',
+          },
+        },
+      ]),
+    });
+    const service = makeService({ qdrant: client });
+
+    await expect(
+      service.store({
+        namespace: 'personal',
+        agentId: 'agent_a',
+        content: 'attacker overwrite',
+        id,
+      }),
+    ).rejects.toBeInstanceOf(MemoryValidationError);
+    // Must NOT overwrite the victim point.
+    expect(fake.upsert).not.toHaveBeenCalled();
+  });
+
+  it('allows a caller-supplied id that already exists in the SAME namespace (idempotent update)', async () => {
+    const id = '33333333-3333-3333-3333-333333333333';
+    const { client, fake } = makeQdrant({
+      retrieve: vi.fn(async () => [
+        {
+          id,
+          payload: {
+            namespace: 'personal',
+            agent_id: 'agent_a',
+            kind: MEMORY_KIND,
+            content: 'original',
+            tags: [],
+            created_at: 'now',
+            updated_at: 'now',
+          },
+        },
+      ]),
+    });
+    const service = makeService({ qdrant: client });
+
+    const { record, outcome } = await service.store({
+      namespace: 'personal',
+      agentId: 'agent_a',
+      content: 'updated content',
+      id,
+    });
+
+    expect(outcome).toBe('inserted');
+    expect(record.id).toBe(id);
+    expect(fake.upsert).toHaveBeenCalledTimes(1);
+    const [, body] = (fake.upsert.mock.calls[0] ?? []) as [string, { points: { id: string }[] }];
+    expect(body.points[0].id).toBe(id);
+  });
+
+  it('allows a brand-new caller-supplied id (retrieve finds nothing)', async () => {
+    const id = '44444444-4444-4444-4444-444444444444';
+    // Default retrieve returns [] → id is free.
+    const { client, fake } = makeQdrant();
+    const service = makeService({ qdrant: client });
+
+    const { record, outcome } = await service.store({
+      namespace: 'personal',
+      agentId: 'agent_a',
+      content: 'fresh id',
+      id,
+    });
+
+    expect(outcome).toBe('inserted');
+    expect(record.id).toBe(id);
+    expect(fake.upsert).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects empty content', async () => {
     const service = makeService();
     await expect(
