@@ -56,6 +56,8 @@ function makeConfig(
       maxSessions: 64,
       maxInflightPerSession: 8,
       keepaliveSec: 30,
+      authFailureMax: 20,
+      authFailureWindowMs: 60_000,
       ...overrides,
     },
     embeddings: {
@@ -763,6 +765,92 @@ describe('Concurrency limits', () => {
     expect((res.body as Record<string, unknown>)['error']).toBe('MCP_SESSION_LIMIT');
 
     await rm(dataDir, { recursive: true, force: true });
+  });
+});
+
+describe('Per-IP auth-failure rate limit (issue #108, SEC-7)', () => {
+  const BAD_TOKEN = 'Bearer sam_pat_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  let server: TestServer;
+
+  beforeEach(async () => {
+    // max=3 failures / 60s so we can trip the limiter in a handful of requests.
+    server = await startTestServer({ authFailureMax: 3, authFailureWindowMs: 60_000 });
+  });
+
+  afterEach(async () => {
+    await server.stop();
+  });
+
+  it('returns 429 with Retry-After after N failed auths from one IP (short-circuits before resolvePat)', async () => {
+    // Three invalid-token attempts are each rejected with 401 (they reach auth).
+    for (let i = 0; i < 3; i++) {
+      const res = await httpRequest(
+        `${server.baseUrl}/mcp`,
+        'POST',
+        { Authorization: BAD_TOKEN },
+        mcpInitializeBody(),
+      );
+      expect(res.status).toBe(401);
+    }
+
+    // The next request is short-circuited by the limiter → 429, NOT another 401.
+    // A 429 (rather than 401) proves the gate fired before PAT resolution.
+    const limited = await httpRequest(
+      `${server.baseUrl}/mcp`,
+      'POST',
+      { Authorization: BAD_TOKEN },
+      mcpInitializeBody(),
+    );
+    expect(limited.status).toBe(429);
+    expect((limited.body as Record<string, unknown>)['error']).toBe('MCP_AUTH_RATE_LIMITED');
+    expect(limited.headers['retry-after']).toBeTruthy();
+  });
+
+  it('a successful auth resets the counter (failures before it do not accumulate)', async () => {
+    // Two failures (under the cap of 3).
+    for (let i = 0; i < 2; i++) {
+      const res = await httpRequest(
+        `${server.baseUrl}/mcp`,
+        'POST',
+        { Authorization: BAD_TOKEN },
+        mcpInitializeBody(),
+      );
+      expect(res.status).toBe(401);
+    }
+
+    // A valid auth succeeds and clears this IP's failure history.
+    const ok = await httpRequest(
+      `${server.baseUrl}/mcp`,
+      'POST',
+      { Authorization: `Bearer ${server.patSecret}` },
+      mcpInitializeBody(),
+    );
+    expect(ok.status).toBe(200);
+
+    // Two more failures. Without the reset the running total would be 4 (>3) and
+    // the second of these would already be 429; with the reset both stay 401.
+    for (let i = 0; i < 2; i++) {
+      const res = await httpRequest(
+        `${server.baseUrl}/mcp`,
+        'POST',
+        { Authorization: BAD_TOKEN },
+        mcpInitializeBody(),
+      );
+      expect(res.status).toBe(401);
+    }
+  });
+
+  it('emits mem_http_requests_total{outcome="rate_limited"} when the limit trips', async () => {
+    for (let i = 0; i < 4; i++) {
+      await httpRequest(
+        `${server.baseUrl}/mcp`,
+        'POST',
+        { Authorization: BAD_TOKEN },
+        mcpInitializeBody(),
+      );
+    }
+    const text = await (await fetch(`${server.baseUrl}/metrics`)).text();
+    expect(text).toMatch(/mem_http_requests_total\{outcome="rate_limited"\} [1-9]/);
   });
 });
 

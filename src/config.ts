@@ -23,6 +23,10 @@ export interface HttpTransportConfig {
   maxSessions: number;
   maxInflightPerSession: number;
   keepaliveSec: number;
+  /** Max failed /mcp auths per client IP within the window before 429 (issue #108). */
+  authFailureMax: number;
+  /** Sliding-window length in ms for the per-IP auth-failure limiter (issue #108). */
+  authFailureWindowMs: number;
 }
 
 export interface Config {
@@ -184,6 +188,14 @@ export function loadConfig(): Config {
     5,
     300,
   );
+  // Per-IP auth-failure rate limit (issue #108, SEC-7). Defaults: 20 failures /
+  // 60s — generous enough that a real client's retries never trip it, tight
+  // enough to blunt a per-IP CPU auth-flood.
+  const authFailureWindowSec = clampInt(
+    parseIntEnv('MCP_HTTP_AUTH_FAIL_WINDOW_SEC', 60),
+    1,
+    3_600,
+  );
 
   return {
     transport,
@@ -203,6 +215,12 @@ export function loadConfig(): Config {
         1_000,
       ),
       keepaliveSec,
+      authFailureMax: clampInt(
+        parseIntEnv('MCP_HTTP_AUTH_FAIL_MAX', 20),
+        1,
+        10_000,
+      ),
+      authFailureWindowMs: authFailureWindowSec * 1000,
     },
     embeddings: {
       provider: embeddingsProvider,
