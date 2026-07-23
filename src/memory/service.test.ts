@@ -9,6 +9,10 @@ import {
 import {
   MEMORY_KIND,
   MEMORY_MAX_CONTENT_LENGTH,
+  MEMORY_MAX_METADATA_BYTES,
+  MEMORY_MAX_SOURCE_LENGTH,
+  MEMORY_MAX_SUMMARY_LENGTH,
+  MEMORY_MAX_TAG_LENGTH,
   MEMORY_MAX_TAGS,
 } from './types.js';
 
@@ -233,6 +237,78 @@ describe('MemoryService.store', () => {
       }),
     ).rejects.toMatchObject({ field: 'tags' });
   });
+
+  // ── SEC-6 (#107): metadata / free-text field caps ──────────────────────────
+
+  it('rejects metadata whose serialized size exceeds the maximum', async () => {
+    const service = makeService();
+    // Exceed the byte cap: one string value larger than MEMORY_MAX_METADATA_BYTES.
+    const oversized = { blob: 'x'.repeat(MEMORY_MAX_METADATA_BYTES + 1) };
+    expect(Buffer.byteLength(JSON.stringify(oversized))).toBeGreaterThan(
+      MEMORY_MAX_METADATA_BYTES,
+    );
+    await expect(
+      service.store({
+        namespace: 'personal',
+        agentId: 'a',
+        content: 'ok',
+        metadata: oversized,
+      }),
+    ).rejects.toMatchObject({ field: 'metadata' });
+  });
+
+  it('accepts metadata exactly at the byte limit', async () => {
+    const { client, fake } = makeQdrant();
+    const service = makeService({ qdrant: client });
+    // Pad the value so the whole JSON string is exactly MEMORY_MAX_METADATA_BYTES.
+    const envelope = Buffer.byteLength(JSON.stringify({ blob: '' }));
+    const atLimit = { blob: 'x'.repeat(MEMORY_MAX_METADATA_BYTES - envelope) };
+    expect(Buffer.byteLength(JSON.stringify(atLimit))).toBe(MEMORY_MAX_METADATA_BYTES);
+    const { outcome } = await service.store({
+      namespace: 'personal',
+      agentId: 'a',
+      content: 'ok',
+      metadata: atLimit,
+    });
+    expect(outcome).toBe('inserted');
+    expect(fake.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a summary longer than the maximum', async () => {
+    const service = makeService();
+    await expect(
+      service.store({
+        namespace: 'personal',
+        agentId: 'a',
+        content: 'ok',
+        summary: 'x'.repeat(MEMORY_MAX_SUMMARY_LENGTH + 1),
+      }),
+    ).rejects.toMatchObject({ field: 'summary' });
+  });
+
+  it('rejects a source longer than the maximum', async () => {
+    const service = makeService();
+    await expect(
+      service.store({
+        namespace: 'personal',
+        agentId: 'a',
+        content: 'ok',
+        source: 'x'.repeat(MEMORY_MAX_SOURCE_LENGTH + 1),
+      }),
+    ).rejects.toMatchObject({ field: 'source' });
+  });
+
+  it('rejects a single tag longer than the maximum tag length', async () => {
+    const service = makeService();
+    await expect(
+      service.store({
+        namespace: 'personal',
+        agentId: 'a',
+        content: 'ok',
+        tags: ['x'.repeat(MEMORY_MAX_TAG_LENGTH + 1)],
+      }),
+    ).rejects.toMatchObject({ field: 'tags' });
+  });
 });
 
 describe('MemoryService.store dedup (ADR-0006 §3.2)', () => {
@@ -329,6 +405,42 @@ describe('MemoryService.store dedup (ADR-0006 §3.2)', () => {
     });
 
     expect(record.metadata?.['dedup_history']).toEqual(['b', 'c', 'd', 'e', 'sixth variant']);
+  });
+
+  it('SEC-6 (#107): trims dedup_history so merged metadata stays within the byte cap', async () => {
+    // Four large prior bodies already stacked; a fifth large merge would push the
+    // serialized metadata well past MEMORY_MAX_METADATA_BYTES (5 * ~20k > 64 KiB).
+    const big = (c: string) => c.repeat(20_000);
+    const { client, fake } = makeQdrant({
+      search: vi.fn(async () => [
+        {
+          id: 'existing-1',
+          score: 0.97,
+          payload: existingPayload({
+            metadata: { dedup_history: [big('a'), big('b'), big('c'), big('d')] },
+          }),
+        },
+      ]),
+    });
+    const service = makeService({ qdrant: client });
+
+    const newBody = big('e');
+    const { record } = await service.store({
+      namespace: 'personal',
+      agentId: 'agent_b',
+      content: newBody,
+    });
+
+    const history = record.metadata?.['dedup_history'] as string[];
+    // Effective stored metadata must never exceed the cap.
+    expect(Buffer.byteLength(JSON.stringify(record.metadata))).toBeLessThanOrEqual(
+      MEMORY_MAX_METADATA_BYTES,
+    );
+    // The newest body is always retained; oldest entries were trimmed to fit.
+    expect(history[history.length - 1]).toBe(newBody);
+    expect(history.length).toBeLessThan(5);
+    // The persisted payload reflects the trimmed history.
+    expect(fake.setPayload).toHaveBeenCalledTimes(1);
   });
 
   it('inserts a new point below the threshold', async () => {

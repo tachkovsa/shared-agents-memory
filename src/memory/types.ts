@@ -155,6 +155,20 @@ export interface DeleteMemoryInput {
 
 export const MEMORY_MAX_CONTENT_LENGTH = 32_000;
 export const MEMORY_MAX_TAGS = 20;
+/**
+ * SEC-6 (#107) — cap the serialized byte size of `metadata` so a writer cannot
+ * bloat Qdrant payloads or evade the token budget by stuffing megabytes into the
+ * otherwise-unbounded `z.record(z.string(), z.unknown())`. Measured as
+ * `Buffer.byteLength(JSON.stringify(metadata))`. 64 KiB is generous for genuine
+ * structured metadata while killing the multi-megabyte abuse case.
+ */
+export const MEMORY_MAX_METADATA_BYTES = 65_536;
+/** SEC-6 (#107) — cap the free-text `summary` field (a "brief summary"). */
+export const MEMORY_MAX_SUMMARY_LENGTH = 4_000;
+/** SEC-6 (#107) — cap the free-text `source` field (an origin path/URL/id). */
+export const MEMORY_MAX_SOURCE_LENGTH = 2_000;
+/** SEC-6 (#107) — cap each individual tag's length (count is MEMORY_MAX_TAGS). */
+export const MEMORY_MAX_TAG_LENGTH = 128;
 
 // ── Dedup thresholds (ADR-0006 §3.2) ────────────────────────────────────────
 /** Default per-namespace dedup threshold; near-duplicates above this merge. */

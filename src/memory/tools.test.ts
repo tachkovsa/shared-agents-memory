@@ -536,6 +536,47 @@ describe('memory_store — quota enforcement', () => {
     ).rejects.toMatchObject({ limit: 'daily_writes', used: 1 });
   });
 
+  // ── SEC-6 (#107): the token estimate must include metadata bytes ──────────
+
+  it('lets a small content-only write through when the embedding-token cap is tight', async () => {
+    // content "hi" => ceil(2/4) = 1 token, comfortably under the 50-token cap.
+    const quota = makeTightQuota({ daily_embedding_tokens: 50 });
+    const { client, fake } = await setupHarnessWithQuota(quota);
+
+    const result = parsePayload(
+      (await client.callTool({
+        name: 'memory_store',
+        arguments: { namespace: 'personal', content: 'hi' },
+      })) as never,
+    );
+    expect(result.outcome).toBe('inserted');
+    expect(fake.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts metadata bytes in the token estimate so it cannot evade the budget', async () => {
+    // Same tiny content, but a ~1 KB metadata blob pushes the estimate past the
+    // 50-token cap: ceil((2 + ~1012) / 4) ≈ 254 tokens. Metadata stays well under
+    // MEMORY_MAX_METADATA_BYTES, so it is the token accounting (not the size cap)
+    // that rejects the write.
+    const quota = makeTightQuota({ daily_embedding_tokens: 50 });
+    const { client, fake } = await setupHarnessWithQuota(quota);
+
+    const result = (await client.callTool({
+      name: 'memory_store',
+      arguments: {
+        namespace: 'personal',
+        content: 'hi',
+        metadata: { blob: 'x'.repeat(1000) },
+      },
+    })) as { content: { text: string }[]; isError?: boolean };
+
+    expect(result.isError).toBe(true);
+    const body = JSON.parse(result.content[0].text);
+    expect(body.error).toBe('quota_exceeded');
+    expect(body.limit).toBe('daily_embedding_tokens');
+    expect(fake.upsert).not.toHaveBeenCalled();
+  });
+
   it('returns quota_exceeded for max_memories when count equals cap', async () => {
     const cap = 3;
     const quota = makeTightQuota({ max_memories: cap, daily_writes: 1_000 });
