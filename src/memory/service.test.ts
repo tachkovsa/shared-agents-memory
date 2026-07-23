@@ -886,6 +886,195 @@ describe('MemoryService.search lifecycle filtering + decay re-rank', () => {
   });
 });
 
+// ── C4 (#110): pagination must return a full page when more matching records
+// exist, and the lifecycle filters are pushed into the Qdrant query so tombstoned
+// / superseded points never eat into the page. These fakes HONOUR the pushed-down
+// `is_null` filter the way a real Qdrant does.
+type MustCond = Record<string, unknown>;
+
+function honoursFilter(
+  payload: Record<string, unknown>,
+  must: MustCond[],
+): boolean {
+  for (const cond of must) {
+    if ('is_null' in cond) {
+      const key = (cond['is_null'] as { key: string }).key;
+      if (payload[key] != null) return false; // is_null matches null-or-missing
+    } else if ('match' in cond) {
+      const key = cond['key'] as string;
+      const value = (cond['match'] as { value: unknown }).value;
+      const actual = payload[key];
+      if (key === 'tags') {
+        if (!Array.isArray(actual) || !actual.includes(value)) return false;
+      } else if (actual !== value) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+describe('MemoryService.search pagination under-fill (C4 #110)', () => {
+  it('returns a full `limit` when tombstoned/superseded points sit in the window', async () => {
+    // 8 live matches + interleaved tombstones/superseded; a real Qdrant honouring
+    // the pushed-down filter never returns the dead ones, so the page fills.
+    const points = [
+      searchHit('live-1', 0.99),
+      searchHit('dead-1', 0.98, { deleted_at: '2026-06-01T00:00:00.000Z' }),
+      searchHit('live-2', 0.97),
+      searchHit('sup-1', 0.96, { superseded_by: 'newer' }),
+      searchHit('live-3', 0.95),
+      searchHit('live-4', 0.94),
+      searchHit('dead-2', 0.93, { deleted_at: '2026-06-01T00:00:00.000Z' }),
+      searchHit('live-5', 0.92),
+      searchHit('live-6', 0.91),
+      searchHit('sup-2', 0.9, { superseded_by: 'newer' }),
+      searchHit('live-7', 0.89),
+      searchHit('live-8', 0.88),
+    ];
+    const search = vi.fn(
+      async (_c: string, opts: { filter: { must: MustCond[] }; limit: number }) =>
+        points
+          .filter((p) => honoursFilter(p.payload, opts.filter.must))
+          .slice(0, opts.limit),
+    );
+    const { client } = makeQdrant({ search });
+    const service = makeService({ qdrant: client });
+
+    const results = await service.search({ namespace: 'personal', query: 'q', limit: 5 });
+
+    expect(results).toHaveLength(5);
+    expect(results.every((r) => r.memory.deletedAt == null)).toBe(true);
+    expect(results.every((r) => r.memory.supersededBy == null)).toBe(true);
+
+    // The lifecycle filters were pushed into the Qdrant query.
+    const [, body] = search.mock.calls[0] as [string, { filter: { must: MustCond[] } }];
+    expect(body.filter.must).toEqual(
+      expect.arrayContaining([
+        { is_null: { key: 'deleted_at' } },
+        { is_null: { key: 'superseded_by' } },
+      ]),
+    );
+  });
+
+  it('does not push the superseded_by filter when includeSuperseded is set', async () => {
+    const search = vi.fn(async () => []);
+    const { client } = makeQdrant({ search });
+    const service = makeService({ qdrant: client });
+
+    await service.search({
+      namespace: 'personal',
+      query: 'q',
+      includeSuperseded: true,
+    });
+
+    const [, body] = search.mock.calls[0] as [string, { filter: { must: MustCond[] } }];
+    expect(body.filter.must).toEqual(
+      expect.arrayContaining([{ is_null: { key: 'deleted_at' } }]),
+    );
+    expect(body.filter.must).not.toContainEqual({ is_null: { key: 'superseded_by' } });
+  });
+});
+
+describe('MemoryService.list pagination under-fill (C4 #110)', () => {
+  function listPoint(
+    id: string,
+    over: Partial<Record<string, unknown>> = {},
+  ): { id: string; payload: Record<string, unknown> } {
+    return {
+      id,
+      payload: {
+        namespace: 'personal',
+        agent_id: 'agent_a',
+        kind: MEMORY_KIND,
+        content: 'c',
+        tags: [],
+        created_at: 'now',
+        updated_at: 'now',
+        deleted_at: null,
+        ...over,
+      },
+    };
+  }
+
+  /** Stateful scroll fake honouring the pushed-down is_null filter + offset cursor. */
+  function scrollFake(points: { id: string; payload: Record<string, unknown> }[]) {
+    return vi.fn(
+      async (
+        _c: string,
+        opts: { filter: { must: MustCond[] }; limit: number; offset?: unknown },
+      ) => {
+        const live = points.filter((p) => honoursFilter(p.payload, opts.filter.must));
+        const start = opts.offset ? live.findIndex((p) => p.id === opts.offset) : 0;
+        const page = live.slice(start, start + opts.limit);
+        const nextIdx = start + opts.limit;
+        return {
+          points: page,
+          next_page_offset: nextIdx < live.length ? live[nextIdx].id : null,
+        };
+      },
+    );
+  }
+
+  it('fills a page from the filtered stream despite interspersed tombstones', async () => {
+    // 5 live records interleaved with tombstones; page of 3 must be 3 live records.
+    const points = [
+      listPoint('live-1'),
+      listPoint('dead-1', { deleted_at: '2026-06-01T00:00:00.000Z' }),
+      listPoint('live-2'),
+      listPoint('dead-2', { deleted_at: '2026-06-01T00:00:00.000Z' }),
+      listPoint('live-3'),
+      listPoint('dead-3', { deleted_at: '2026-06-01T00:00:00.000Z' }),
+      listPoint('live-4'),
+      listPoint('live-5'),
+    ];
+    const scroll = scrollFake(points);
+    const service = new MemoryService({
+      qdrant: { scroll } as unknown as QdrantClient,
+      embeddings: makeEmbeddings(),
+      collection: COLLECTION,
+    });
+
+    const page1 = await service.list({ namespace: 'personal', limit: 3 });
+    expect(page1.memories.map((m) => m.id)).toEqual(['live-1', 'live-2', 'live-3']);
+    expect(page1.nextCursor).toBe('live-4'); // more matching records remain
+
+    // The deleted_at exclusion was pushed into the scroll filter.
+    const [, body] = scroll.mock.calls[0] as [string, { filter: { must: MustCond[] } }];
+    expect(body.filter.must).toContainEqual({ is_null: { key: 'deleted_at' } });
+
+    const page2 = await service.list({
+      namespace: 'personal',
+      limit: 3,
+      cursor: page1.nextCursor,
+    });
+    expect(page2.memories.map((m) => m.id)).toEqual(['live-4', 'live-5']);
+    expect(page2.nextCursor).toBeNull(); // null ONLY at true exhaustion
+  });
+
+  it('includeDeleted lists tombstones and omits the is_null filter', async () => {
+    const points = [
+      listPoint('live-1'),
+      listPoint('dead-1', { deleted_at: '2026-06-01T00:00:00.000Z' }),
+    ];
+    const scroll = scrollFake(points);
+    const service = new MemoryService({
+      qdrant: { scroll } as unknown as QdrantClient,
+      embeddings: makeEmbeddings(),
+      collection: COLLECTION,
+    });
+
+    const page = await service.list({
+      namespace: 'personal',
+      limit: 10,
+      includeDeleted: true,
+    });
+    expect(page.memories.map((m) => m.id).sort()).toEqual(['dead-1', 'live-1']);
+    const [, body] = scroll.mock.calls[0] as [string, { filter: { must: MustCond[] } }];
+    expect(body.filter.must).not.toContainEqual({ is_null: { key: 'deleted_at' } });
+  });
+});
+
 describe('MemoryService.get / restore soft-delete', () => {
   function deletedRetrieve() {
     return vi.fn(async () => [

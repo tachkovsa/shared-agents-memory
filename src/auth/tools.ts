@@ -16,6 +16,7 @@ import {
 import { AuthError } from './request-context.js';
 import { authorizeServiceAccess } from './resolve-request.js';
 import { ALL_SCOPES, type AgentPat, type AgentScope } from './types.js';
+import { namespaceIdSchema } from '../namespaces/store.js';
 
 export interface PatToolDeps {
   patStore: PatStore;
@@ -213,7 +214,9 @@ export function registerPatTools(server: McpServer, deps: PatToolDeps): void {
     {
       display_name: z.string().min(1).describe('Human-readable label, e.g. "Codex CLI on laptop"'),
       agent_identity: z.string().min(1).describe('Stable agent identity (cuid or operator-chosen handle)'),
-      allowed_namespaces: z.array(z.string().min(1)).min(1).describe('Namespaces this token may operate in'),
+      // N3 (#110) — validate each entry with the canonical namespace-id schema so
+      // a PAT cannot be minted scoped to a malformed, unmatchable namespace.
+      allowed_namespaces: z.array(namespaceIdSchema).min(1).describe('Namespaces this token may operate in'),
       scopes: z.array(scopeSchema).min(1).describe('Scopes granted to this token'),
       expires_in_days: z
         .number()
