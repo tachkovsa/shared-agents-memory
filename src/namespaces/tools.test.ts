@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthAuditWriter } from '../auth/audit.js';
 import { PatStore } from '../auth/pat-store.js';
 import { registerPatTools } from '../auth/tools.js';
@@ -42,11 +42,15 @@ interface Harness {
   server: McpServer;
   patStore: PatStore;
   sessionPat: AgentPat;
+  qdrantDelete: ReturnType<typeof vi.fn>;
 }
 
+const TEST_COLLECTION = 'agent_memories';
+
 async function setupHarness(
-  options: { sessionScopes?: AgentScope[] } = {},
+  options: { sessionScopes?: AgentScope[]; qdrantDelete?: ReturnType<typeof vi.fn> } = {},
 ): Promise<Harness> {
+  const qdrantDelete = options.qdrantDelete ?? vi.fn(async () => ({ status: 'completed' }));
   const patStore = await PatStore.open({ storePath, pepper: PEPPER });
   const minted = await patStore.mint({
     display_name: 'session',
@@ -80,6 +84,8 @@ async function setupHarness(
     sessionId: 'sess_test',
     pepper: PEPPER,
     dataDir: workDir,
+    qdrant: { delete: qdrantDelete } as never,
+    collection: TEST_COLLECTION,
   });
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -89,7 +95,7 @@ async function setupHarness(
     client.connect(clientTransport),
   ]);
 
-  return { client, server, patStore, sessionPat: minted.pat };
+  return { client, server, patStore, sessionPat: minted.pat, qdrantDelete };
 }
 
 function parsePayload(result: { content: { type: string; text?: string }[] }) {
@@ -288,6 +294,8 @@ describe('namespace_list', () => {
       sessionId: 'sess_test',
       pepper: PEPPER,
       dataDir: workDir,
+      qdrant: { delete: vi.fn(async () => ({ status: 'completed' })) } as never,
+      collection: TEST_COLLECTION,
     });
 
     const [ct, st] = InMemoryTransport.createLinkedPair();
@@ -497,6 +505,75 @@ describe('namespace_delete', () => {
     await expect(stat(src)).rejects.toThrow();
 
     // Destination should exist with _namespace.json.
+    const destEntries = await readdir(join(workDir, '_deleted'));
+    expect(destEntries.some((e) => e.startsWith('ns-one-'))).toBe(true);
+  });
+
+  it('cascades a namespace-filtered Qdrant delete for the tenant vectors (issue #102)', async () => {
+    const { client, qdrantDelete } = await setupHarness();
+
+    await createNamespaceSkeleton(workDir, {
+      id: 'ns-one',
+      display_name: 'NS One',
+      owner_agent_id: 'agent_x',
+      owner_scopes: [],
+    });
+
+    const pending = parsePayload(
+      (await client.callTool({
+        name: 'namespace_delete',
+        arguments: { id: 'ns-one' },
+      })) as never,
+    );
+    const done = parsePayload(
+      (await client.callTool({
+        name: 'namespace_delete',
+        arguments: { id: 'ns-one', confirmation_token: pending.pending.confirmation_token },
+      })) as never,
+    );
+
+    expect(done.deleted).toBe(true);
+    expect(done.vectors_purged).toBe(true);
+
+    // The purge must be a namespace-filtered delete against the collection.
+    expect(qdrantDelete).toHaveBeenCalledTimes(1);
+    const [collection, body] = qdrantDelete.mock.calls[0]!;
+    expect(collection).toBe(TEST_COLLECTION);
+    expect(body).toMatchObject({
+      filter: { must: [{ key: 'namespace', match: { value: 'ns-one' } }] },
+    });
+  });
+
+  it('still soft-deletes but reports vectors_purged=false when the Qdrant purge fails', async () => {
+    const failingDelete = vi.fn(async () => {
+      throw new Error('qdrant unreachable');
+    });
+    const { client } = await setupHarness({ qdrantDelete: failingDelete });
+
+    await createNamespaceSkeleton(workDir, {
+      id: 'ns-one',
+      display_name: 'NS One',
+      owner_agent_id: 'agent_x',
+      owner_scopes: [],
+    });
+
+    const pending = parsePayload(
+      (await client.callTool({
+        name: 'namespace_delete',
+        arguments: { id: 'ns-one' },
+      })) as never,
+    );
+    const done = parsePayload(
+      (await client.callTool({
+        name: 'namespace_delete',
+        arguments: { id: 'ns-one', confirmation_token: pending.pending.confirmation_token },
+      })) as never,
+    );
+
+    // Directory move committed even though the immediate purge failed — the
+    // orphan sweep is the backstop.
+    expect(done.deleted).toBe(true);
+    expect(done.vectors_purged).toBe(false);
     const destEntries = await readdir(join(workDir, '_deleted'));
     expect(destEntries.some((e) => e.startsWith('ns-one-'))).toBe(true);
   });
