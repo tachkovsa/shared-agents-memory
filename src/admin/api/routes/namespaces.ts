@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { QdrantClient } from '@qdrant/js-client-rest';
 import {
   createNamespaceSkeleton,
   isValidNamespaceId,
@@ -9,6 +10,8 @@ import {
   removeMember,
   upsertMember,
 } from '../../../namespaces/store.js';
+import { hardDeleteNamespace } from '../../../namespaces/hard-delete.js';
+import type { AuthAuditWriter } from '../../../auth/audit.js';
 import type { AgentScope } from '../../../auth/types.js';
 import { createNamespaceSchema, shareNamespaceSchema } from '../../shared/schemas.js';
 import type { PreHandler } from '../app.js';
@@ -16,6 +19,17 @@ import type { PreHandler } from '../app.js';
 export interface NamespaceAdminRoutesDeps {
   dataDir: string;
   requireAuth: PreHandler;
+  /**
+   * Enables the verifiable operator hard-delete route (FEAT-1, #111). Requires a
+   * Qdrant client + collection (to purge and count vectors) and an auditor (to
+   * record the `namespace.hard_deleted` receipt). Omit to leave `/purge`
+   * unregistered (e.g. unit tests over the read/share API only).
+   */
+  purge?: {
+    qdrant: QdrantClient;
+    collection: string;
+    auditor: AuthAuditWriter;
+  };
 }
 
 /** Scopes the owner (creator) receives on a new namespace — full control sans service:admin. */
@@ -37,7 +51,7 @@ export function registerNamespaceAdminRoutes(
   app: FastifyInstance,
   deps: NamespaceAdminRoutesDeps,
 ): void {
-  const { dataDir, requireAuth } = deps;
+  const { dataDir, requireAuth, purge } = deps;
 
   app.get('/api/admin/namespaces', { preHandler: requireAuth }, async () => {
     const ids = await listNamespaceIds(dataDir);
@@ -167,4 +181,43 @@ export function registerNamespaceAdminRoutes(
       return { removed, agent_id: req.params.agentId };
     },
   );
+
+  // Verifiable operator-only HARD-delete (FEAT-1, #111). Destructive companion to
+  // the MCP soft-delete: physically purges the tenant's Qdrant vectors and removes
+  // the `_deleted/<id>-<ts>/` dirs, returning a receipt that proves points_after===0.
+  // Operates ONLY on already soft-deleted namespaces — a live namespace is 409'd so
+  // the 30-day grace promise is never short-circuited. Requires the purge deps.
+  if (purge) {
+    const { qdrant, collection, auditor } = purge;
+    app.delete<{ Params: { id: string } }>(
+      '/api/admin/namespaces/:id/purge',
+      // Destructive + hits Qdrant twice per call — throttle per session.
+      { preHandler: requireAuth, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } },
+      async (req, reply) => {
+        const result = await hardDeleteNamespace({
+          qdrant,
+          collection,
+          dataDir,
+          namespaceId: req.params.id,
+          operatorId: req.principal!.operatorId,
+          auditor,
+        });
+        switch (result.status) {
+          case 'invalid_id':
+            return reply.code(400).send({ error: 'invalid_input' });
+          case 'protected':
+            return reply.code(403).send({ error: 'protected_namespace' });
+          case 'live':
+            return reply
+              .code(409)
+              .send({ error: 'namespace_live', message: 'namespace is live; soft-delete it first' });
+          case 'not_found':
+            return reply.code(404).send({ error: 'not_found' });
+          case 'purged':
+            // A partial purge (points_after > 0) must surface as 500, not success.
+            return reply.code(result.receipt.verified ? 200 : 500).send(result.receipt);
+        }
+      },
+    );
+  }
 }

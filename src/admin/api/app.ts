@@ -50,6 +50,14 @@ export interface AdminAppOptions {
   patStore?: PatStore;
   /** MemoryService over the engine's Qdrant — enables the memory browser routes (needs dataDir). */
   memoryService?: MemoryService;
+  /**
+   * Engine Qdrant client — enables the verifiable operator hard-delete route
+   * (FEAT-1, #111) when paired with `collection` + `dataDir`. Omit in unit tests
+   * that don't exercise purge.
+   */
+  qdrant?: QdrantClient;
+  /** Qdrant collection the memories live in — required alongside `qdrant` for purge. */
+  collection?: string;
   /** Enables the observability summary route (health + counts + metrics); needs dataDir. */
   observability?: {
     qdrant: QdrantClient;
@@ -83,22 +91,33 @@ export async function createAdminApp(opts: AdminAppOptions): Promise<FastifyInst
 
   registerBillingRoutes(app, { requireAuth });
 
+  // One auditor per engine data dir, shared by every admin path that writes the
+  // auth audit log (namespace hard-delete receipts, PAT-revoke orphan prune).
+  const auditor =
+    opts.dataDir !== undefined
+      ? new AuthAuditWriter({ path: auditPathForDataDir(opts.dataDir) })
+      : undefined;
+
   if (opts.dataDir) {
-    registerNamespaceAdminRoutes(app, { dataDir: opts.dataDir, requireAuth });
+    registerNamespaceAdminRoutes(app, {
+      dataDir: opts.dataDir,
+      requireAuth,
+      // Enable the verifiable hard-delete only when the Qdrant surface is wired.
+      purge:
+        opts.qdrant && opts.collection && auditor
+          ? { qdrant: opts.qdrant, collection: opts.collection, auditor }
+          : undefined,
+    });
     registerRuleAdminRoutes(app, { dataDir: opts.dataDir, requireAuth });
     registerAuditAdminRoutes(app, { dataDir: opts.dataDir, requireAuth });
   }
 
   if (opts.patStore) {
     // When the engine data dir is known, revoke prunes orphaned memberships
-    // exactly like MCP pat_revoke (ADR-0004) — same callback, fresh auditor.
+    // exactly like MCP pat_revoke (ADR-0004) — same callback, shared auditor.
     const onRevoke =
-      opts.dataDir !== undefined
-        ? makeOrphanPruneCallback(
-            opts.patStore,
-            opts.dataDir,
-            new AuthAuditWriter({ path: auditPathForDataDir(opts.dataDir) }),
-          )
+      opts.dataDir !== undefined && auditor !== undefined
+        ? makeOrphanPruneCallback(opts.patStore, opts.dataDir, auditor)
         : undefined;
     registerPatAdminRoutes(app, { patStore: opts.patStore, requireAuth, onRevoke });
   }

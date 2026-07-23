@@ -16,7 +16,11 @@ export {
 export type { CreateNamespaceSpec } from './store.js';
 export {
   purgeNamespaceVectors,
+  countNamespaceVectors,
   listDeletedNamespaceIds,
+  listDeletedNamespaceDirs,
   sweepOrphanedNamespaceVectors,
 } from './vector-cascade.js';
 export type { NamespaceVectorPurger } from './vector-cascade.js';
+export { hardDeleteNamespace } from './hard-delete.js';
+export type { HardDeleteResult, PurgeReceipt } from './hard-delete.js';

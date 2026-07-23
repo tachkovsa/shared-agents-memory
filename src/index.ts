@@ -62,6 +62,9 @@ async function main(): Promise<void> {
       // agent-side lookups stay consistent in-process.
       patStore,
       memoryService: adminMemory,
+      // Enables the verifiable operator hard-delete route (FEAT-1, #111).
+      qdrant,
+      collection: config.qdrant.collectionName,
       observability: {
         qdrant,
         collection: config.qdrant.collectionName,
