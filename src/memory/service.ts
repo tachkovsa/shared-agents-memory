@@ -291,14 +291,14 @@ export class MemoryService {
 
     await this.qdrant.setPayload(this.collection, {
       wait: true,
-      payload: { deleted_at: null },
+      payload: { deleted_at: null, deleted_by: null },
       points: [input.id],
     });
     await this.appendLifecycleAudit(input.namespace, {
       event: 'memory.restored',
       point_id: input.id,
     });
-    return { ...existing, deletedAt: null };
+    return { ...existing, deletedAt: null, deletedBy: null };
   }
 
   private async appendLifecycleAudit(
@@ -338,13 +338,45 @@ export class MemoryService {
     return updated;
   }
 
+  /**
+   * Delete a memory. Two callers share this method, keyed on `includeDeleted`
+   * (issue #105 / SEC-4):
+   *
+   * - Operator console (`includeDeleted: true`) — HARD purge: the point is
+   *   physically removed via `qdrant.delete`. `includeDeleted` also lets it act
+   *   on a tombstone it is browsing via include_deleted. This is the only path
+   *   that can irreversibly destroy a record.
+   * - MCP `memory_delete` (`includeDeleted` false/undefined) — SOFT delete: set
+   *   the same `deleted_at` tombstone the decay sweep uses (ADR-0006 §3.4). The
+   *   record drops out of search/get (both already filter `deleted_at`) yet stays
+   *   restorable via `memory_restore`. The MCP path can never hard-purge.
+   */
   async delete(input: DeleteMemoryInput): Promise<void> {
-    // includeDeleted lets the operator console hard-delete (purge) a tombstone it
-    // is showing via include_deleted; the MCP path leaves it false.
-    await this.fetchOwned(input.namespace, input.id, input.includeDeleted ?? false);
-    await this.qdrant.delete(this.collection, {
+    const hardPurge = input.includeDeleted ?? false;
+    const record = await this.fetchOwned(input.namespace, input.id, hardPurge);
+
+    if (hardPurge) {
+      await this.qdrant.delete(this.collection, {
+        wait: true,
+        points: [input.id],
+      });
+      return;
+    }
+
+    // Soft-delete: mirror the decay tombstone (partial setPayload of deleted_at)
+    // so memory_restore, which only understands deleted_at, covers user deletes.
+    const nowIso = this.now().toISOString();
+    await this.qdrant.setPayload(this.collection, {
       wait: true,
+      payload: { deleted_at: nowIso, deleted_by: input.deletedBy ?? null },
       points: [input.id],
+    });
+    await this.appendLifecycleAudit(input.namespace, {
+      event: 'memory.soft_deleted',
+      point_id: input.id,
+      reason: 'user_delete',
+      deleted_by: input.deletedBy ?? null,
+      last_retrieved_at: record.lastRetrievedAt,
     });
   }
 
@@ -464,6 +496,7 @@ export class MemoryService {
       decayScore: DECAY_DEFAULT_SCORE,
       supersededBy: null,
       deletedAt: null,
+      deletedBy: null,
       stalenessSignal: 'unverified',
       verifiesAgainst: input.verifiesAgainst ?? null,
     };
@@ -541,6 +574,7 @@ export function memoryToPayload(memory: MemoryRecord): Record<string, unknown> {
     decay_score: memory.decayScore ?? DECAY_DEFAULT_SCORE,
     superseded_by: memory.supersededBy ?? null,
     deleted_at: memory.deletedAt ?? null,
+    deleted_by: memory.deletedBy ?? null,
     staleness_signal: memory.stalenessSignal ?? 'unverified',
     verifies_against: verifiesAgainstToPayload(memory.verifiesAgainst),
     ...(memory.expiresAt ? { expires_at: memory.expiresAt } : {}),
@@ -597,6 +631,7 @@ export function payloadToMemory(
     decayScore: (payload['decay_score'] as number) ?? DECAY_DEFAULT_SCORE,
     supersededBy: (payload['superseded_by'] as string | null) ?? null,
     deletedAt: (payload['deleted_at'] as string | null) ?? null,
+    deletedBy: (payload['deleted_by'] as string | null) ?? null,
     stalenessSignal: ((payload['staleness_signal'] as StalenessSignal) ?? 'unverified'),
     verifiesAgainst: payloadToVerifiesAgainst(payload['verifies_against']),
   };

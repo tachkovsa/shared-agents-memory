@@ -365,7 +365,10 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
 
   server.tool(
     'memory_delete',
-    'Delete an episodic memory by ID within a namespace.',
+    'Soft-delete an episodic memory by ID within a namespace. The record is ' +
+      'tombstoned (excluded from search/get) but NOT purged, and stays ' +
+      'restorable via memory_restore (issue #105 / SEC-4). Hard purge is ' +
+      'reserved for the operator console.',
     {
       namespace: z.string().describe('Namespace the memory belongs to'),
       id: z.string().uuid().describe('Memory ID to delete'),
@@ -375,8 +378,14 @@ export function registerMemoryTools(server: McpServer, deps: MemoryToolDeps): vo
       if (!ctx) return authErrorResponse(error!);
 
       try {
-        await service.delete({ namespace: ctx.namespaceId, id: input.id });
-        return jsonResponse({ deleted: true, id: input.id });
+        // Soft-delete only: pass the acting agent as `deletedBy`, never
+        // includeDeleted (that is the operator hard-purge switch).
+        await service.delete({
+          namespace: ctx.namespaceId,
+          id: input.id,
+          deletedBy: ctx.agentId,
+        });
+        return jsonResponse({ deleted: true, soft_deleted: true, restorable: true, id: input.id });
       } catch (err) {
         if (err instanceof MemoryNotFoundError) {
           return notFoundResponse(err.namespaceId, err.memoryId);
