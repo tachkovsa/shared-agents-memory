@@ -368,7 +368,7 @@ describe('memory_update_metadata', () => {
 });
 
 describe('memory_delete', () => {
-  it('deletes by id', async () => {
+  it('soft-deletes by id: tombstones the record, never hard-deletes (issue #105)', async () => {
     const { client, fake } = await setupHarness({}, {
       retrieve: vi.fn(async () => [
         {
@@ -396,7 +396,16 @@ describe('memory_delete', () => {
       })) as never,
     );
     expect(body.deleted).toBe(true);
-    expect(fake.delete).toHaveBeenCalledTimes(1);
+    expect(body.soft_deleted).toBe(true);
+    // MCP path must not hard-purge; it writes a deleted_at tombstone instead.
+    expect(fake.delete).not.toHaveBeenCalled();
+    expect(fake.setPayload).toHaveBeenCalledTimes(1);
+    const [, payloadBody] = fake.setPayload.mock.calls[0] as [
+      string,
+      { payload: { deleted_at: string; deleted_by: string } },
+    ];
+    expect(typeof payloadBody.payload.deleted_at).toBe('string');
+    expect(payloadBody.payload.deleted_by).toBe('agent_session');
   });
 
   it('returns not_found if absent', async () => {
