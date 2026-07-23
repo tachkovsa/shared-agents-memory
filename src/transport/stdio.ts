@@ -31,6 +31,7 @@ import {
 import { StalenessAuditor } from '../lifecycle/staleness.js';
 import { resolveLifecycle } from '../namespaces/defaults.js';
 import { loadNamespace } from '../namespaces/store.js';
+import { sweepOrphanedNamespaceVectors } from '../namespaces/vector-cascade.js';
 import { makeOrphanPruneCallback, registerNamespaceTools } from '../namespaces/tools.js';
 import { initCollection, quantizationSearchParams } from '../qdrant.js';
 import { QuotaService } from '../quota/quota-service.js';
@@ -82,6 +83,16 @@ export async function runStdioTransport(deps: StdioDeps): Promise<void> {
     dimension: config.embeddings.embeddingDimension,
     quantization: config.qdrant.quantization,
   });
+
+  // Backstop for issue #102: purge Qdrant vectors for namespaces already
+  // soft-deleted into data/_deleted/ (pre-existing orphans, or a delete whose
+  // cascade failed after the directory move). Best-effort — a sweep failure must
+  // not block startup; the next boot retries.
+  try {
+    await sweepOrphanedNamespaceVectors(qdrant, config.qdrant.collectionName, config.storage.dataDir);
+  } catch (err) {
+    process.stderr.write(`[stdio-transport] orphan vector sweep failed: ${String(err)}\n`);
+  }
 
   const server = new McpServer({
     name: 'shared-agents-memory',
@@ -171,6 +182,8 @@ export async function runStdioTransport(deps: StdioDeps): Promise<void> {
     sessionId,
     pepper,
     dataDir: config.storage.dataDir,
+    qdrant,
+    collection: config.qdrant.collectionName,
   });
 
   registerRuleTools(server, {

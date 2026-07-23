@@ -14,3 +14,9 @@ export {
   NamespaceNotFoundError,
 } from './store.js';
 export type { CreateNamespaceSpec } from './store.js';
+export {
+  purgeNamespaceVectors,
+  listDeletedNamespaceIds,
+  sweepOrphanedNamespaceVectors,
+} from './vector-cascade.js';
+export type { NamespaceVectorPurger } from './vector-cascade.js';
