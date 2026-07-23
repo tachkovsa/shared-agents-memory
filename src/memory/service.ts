@@ -14,6 +14,10 @@ import {
   MEMORY_LIST_DEFAULT_LIMIT,
   MEMORY_LIST_MAX_LIMIT,
   MEMORY_MAX_CONTENT_LENGTH,
+  MEMORY_MAX_METADATA_BYTES,
+  MEMORY_MAX_SOURCE_LENGTH,
+  MEMORY_MAX_SUMMARY_LENGTH,
+  MEMORY_MAX_TAG_LENGTH,
   MEMORY_MAX_TAGS,
   type DeleteMemoryInput,
   type GetMemoryInput,
@@ -110,6 +114,9 @@ export class MemoryService {
   async store(input: StoreMemoryInput): Promise<StoreResult> {
     this.validateContent(input.content);
     this.validateTags(input.tags);
+    this.validateSummary(input.summary);
+    this.validateSource(input.source);
+    this.validateMetadata(input.metadata);
 
     const nowIso = this.now().toISOString();
     const vector = await this.embeddings.embed(input.content);
@@ -318,6 +325,9 @@ export class MemoryService {
 
   async updateMetadata(input: UpdateMemoryMetadataInput): Promise<MemoryRecord> {
     this.validateTags(input.tags);
+    this.validateSummary(input.summary);
+    this.validateSource(input.source);
+    this.validateMetadata(input.metadata);
     const existing = await this.fetchOwned(input.namespace, input.id);
 
     const updated: MemoryRecord = {
@@ -462,10 +472,18 @@ export class MemoryService {
     history.push(input.content);
     const dedupHistory = history.slice(-DEDUP_HISTORY_CAP);
 
+    // SEC-6 (#107) — dedup_history stacks up to DEDUP_HISTORY_CAP prior bodies
+    // (each ≤ MEMORY_MAX_CONTENT_LENGTH), which can push the effective stored
+    // metadata past MEMORY_MAX_METADATA_BYTES. This path is system-managed
+    // (not caller input) and a merge must never fail, so trim the oldest history
+    // entries until the serialized metadata fits the cap.
+    const base = { ...(existing.metadata ?? {}) };
+    const metadata = this.capMetadataForMerge(base, dedupHistory);
+
     const updated: MemoryRecord = {
       ...existing,
       tags,
-      metadata: { ...(existing.metadata ?? {}), dedup_history: dedupHistory },
+      metadata,
       retrievalCount: existing.retrievalCount + 1,
       updatedAt: nowIso,
     };
@@ -475,6 +493,35 @@ export class MemoryService {
       points: [updated.id],
     });
     return updated;
+  }
+
+  /**
+   * SEC-6 (#107) — assemble the merged metadata object (existing keys minus the
+   * stale `dedup_history`, plus the freshly-capped `dedupHistory`) and trim the
+   * oldest history entries until the serialized size is within
+   * MEMORY_MAX_METADATA_BYTES. If it still doesn't fit with zero history (the
+   * base metadata is already oversized — should not happen, as store/update cap
+   * incoming metadata), the base is returned as-is rather than failing the merge.
+   */
+  private capMetadataForMerge(
+    base: Record<string, unknown>,
+    dedupHistory: unknown[],
+  ): Record<string, unknown> {
+    const rest = { ...base };
+    delete rest['dedup_history'];
+    let history = [...dedupHistory];
+    while (
+      history.length > 0 &&
+      Buffer.byteLength(JSON.stringify({ ...rest, dedup_history: history })) >
+        MEMORY_MAX_METADATA_BYTES
+    ) {
+      history = history.slice(1); // drop the oldest entry
+    }
+    if (history.length === 0) {
+      // Nothing left to trim: keep the surviving keys without dedup_history.
+      return rest;
+    }
+    return { ...rest, dedup_history: history };
   }
 
   private insertRecord(input: StoreMemoryInput, id: string, nowIso: string): MemoryRecord {
@@ -551,6 +598,51 @@ export class MemoryService {
       throw new MemoryValidationError(
         `Tag count exceeds maximum of ${MEMORY_MAX_TAGS}`,
         'tags',
+      );
+    }
+    for (const tag of tags) {
+      if (tag.length > MEMORY_MAX_TAG_LENGTH) {
+        throw new MemoryValidationError(
+          `Tag exceeds maximum length of ${MEMORY_MAX_TAG_LENGTH}`,
+          'tags',
+        );
+      }
+    }
+  }
+
+  private validateSummary(summary: string | undefined): void {
+    if (summary === undefined) return;
+    if (summary.length > MEMORY_MAX_SUMMARY_LENGTH) {
+      throw new MemoryValidationError(
+        `Memory summary exceeds maximum length of ${MEMORY_MAX_SUMMARY_LENGTH}`,
+        'summary',
+      );
+    }
+  }
+
+  private validateSource(source: string | undefined): void {
+    if (source === undefined) return;
+    if (source.length > MEMORY_MAX_SOURCE_LENGTH) {
+      throw new MemoryValidationError(
+        `Memory source exceeds maximum length of ${MEMORY_MAX_SOURCE_LENGTH}`,
+        'source',
+      );
+    }
+  }
+
+  /**
+   * SEC-6 (#107) — bound the serialized byte size of caller-supplied metadata so
+   * it cannot bloat the Qdrant payload or evade the token budget. The at-rest
+   * `dedup_history` growth is bounded separately by `capMetadataForMerge` (the
+   * merge path is system-managed, not caller input, so it trims rather than throws).
+   */
+  private validateMetadata(metadata: Record<string, unknown> | undefined): void {
+    if (metadata === undefined) return;
+    const bytes = Buffer.byteLength(JSON.stringify(metadata));
+    if (bytes > MEMORY_MAX_METADATA_BYTES) {
+      throw new MemoryValidationError(
+        `Memory metadata exceeds maximum serialized size of ${MEMORY_MAX_METADATA_BYTES} bytes`,
+        'metadata',
       );
     }
   }
